@@ -1,0 +1,16 @@
+Brian2==2.10.1
+cloudpickle==3.1.2
+Cython==3.1.3
+Jinja2==3.1.6
+joblib==1.6.0
+MarkupSafe==3.0.3
+mpmath==1.3.0
+numpy==2.5.3
+packaging==26.3
+pandas==3.0.6
+pyarrow==25.0.1
+pyparsing==3.3.2
+python-dateutil==2.9.0.post0
+setuptools==84.0.0
+six==1.17.0
+sympy==1.14.0
