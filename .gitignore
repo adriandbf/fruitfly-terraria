@@ -6,3 +6,4 @@ brain/Drosophila_brain_model/
 brain/data/
 *.parquet
 *.feather
+brain/standalone_build_*/
