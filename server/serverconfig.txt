@@ -1,0 +1,16 @@
+# tModLoader dedicated server config for the fruit fly project.
+# Copy next to the server's start script, edit the password, then start the server with:
+#   start-tModLoaderServer.bat -config serverconfig.txt
+# Keys are documented at https://terraria.wiki.gg/wiki/Server#Server_config_file
+worldname=FruitFlyWorld
+# 1 = small, 2 = medium, 3 = large
+autocreatesize=1
+autocreate=1
+difficulty=0
+maxplayers=4
+port=7777
+password=CHANGE_ME
+motd=Fruit fly test world
+# Keep the server off the internet: no UPnP port forwarding
+upnp=0
+secure=1
