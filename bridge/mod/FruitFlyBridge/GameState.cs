@@ -22,7 +22,21 @@ namespace FruitFlyBridge
         {
             if (Main.gameMenu || Main.LocalPlayer == null)
             {
-                return new JObject { ["ok"] = true, ["in_world"] = false };
+                // Temporary diagnostics: in_world came back false when the
+                // player insisted they were standing in-world, so surface the
+                // exact flags instead of guessing at another fix blind.
+                return new JObject
+                {
+                    ["ok"] = true,
+                    ["in_world"] = false,
+                    ["debug"] = new JObject
+                    {
+                        ["game_menu"] = Main.gameMenu,
+                        ["local_player_null"] = Main.LocalPlayer == null,
+                        ["my_player_index"] = Main.myPlayer,
+                        ["net_mode"] = Main.netMode,
+                    },
+                };
             }
 
             var player = Main.LocalPlayer;
