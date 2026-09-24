@@ -32,11 +32,6 @@ namespace FruitFlyBridge
     /// network. Protocol is newline-delimited JSON, one request/response per
     /// line, see bridge/README.md for the schema.
     ///
-    /// UNTESTED: written without a working tModLoader build to compile against
-    /// (no dev environment in the sandbox this was drafted in). Build via
-    /// Mod Sources > Build + Reload in-game and fix whatever the compiler
-    /// flags — TriggersSet/Player field names can drift between tModLoader
-    /// versions.
     /// </summary>
     public class BridgeSystem : ModSystem
     {
@@ -44,10 +39,21 @@ namespace FruitFlyBridge
 
         private static readonly object ActionLock = new object();
         private static readonly ActionState PendingAction = new ActionState();
+        private static int _connectedClients;
 
         private TcpListener _listener;
         private Thread _acceptThread;
         private volatile bool _running;
+
+        /// <summary>
+        /// Whether a client is currently connected. BridgePlayer only overrides
+        /// real input while this is true — otherwise the mod would force every
+        /// control to "released" as soon as it loads (PendingAction defaults to
+        /// all-false), blocking normal play even with no bridge client running.
+        /// (First real test: the character wouldn't move at all, not even with
+        /// the keyboard, once the mod was enabled — this is why.)
+        /// </summary>
+        public static bool IsClientConnected => _connectedClients > 0;
 
         /// <summary>Thread-safe snapshot of the most recent action request.</summary>
         public static ActionState GetCurrentAction()
@@ -112,26 +118,35 @@ namespace FruitFlyBridge
 
         private void HandleClient(TcpClient client)
         {
-            using (client)
-            using (var stream = client.GetStream())
-            using (var reader = new StreamReader(stream))
-            using (var writer = new StreamWriter(stream) { AutoFlush = true })
+            Interlocked.Increment(ref _connectedClients);
+            try
             {
-                string line;
-                while (_running && (line = reader.ReadLine()) != null)
+                using (client)
+                using (var stream = client.GetStream())
+                using (var reader = new StreamReader(stream))
+                using (var writer = new StreamWriter(stream) { AutoFlush = true })
                 {
-                    JObject response;
-                    try
+                    string line;
+                    while (_running && (line = reader.ReadLine()) != null)
                     {
-                        var request = JObject.Parse(line);
-                        response = HandleRequest(request);
+                        JObject response;
+                        try
+                        {
+                            var request = JObject.Parse(line);
+                            response = HandleRequest(request);
+                        }
+                        catch (Exception ex)
+                        {
+                            response = new JObject { ["ok"] = false, ["error"] = ex.Message };
+                        }
+                        writer.WriteLine(response.ToString(Newtonsoft.Json.Formatting.None));
                     }
-                    catch (Exception ex)
-                    {
-                        response = new JObject { ["ok"] = false, ["error"] = ex.Message };
-                    }
-                    writer.WriteLine(response.ToString(Newtonsoft.Json.Formatting.None));
                 }
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _connectedClients);
+                SetCurrentAction(new ActionState()); // release all keys once the bridge disconnects
             }
         }
 

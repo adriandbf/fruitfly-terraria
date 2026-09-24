@@ -17,6 +17,11 @@ namespace FruitFlyBridge
     /// (First build attempt set Player.controlX directly — compiled fine,
     /// did nothing in-game, this is the fix.)
     ///
+    /// Only overrides while BridgeSystem.IsClientConnected — otherwise this
+    /// would force every control to "released" the instant the mod loads,
+    /// even with no bridge client running, which is what blocked ALL
+    /// movement (including the real keyboard) on the first live test.
+    ///
     /// "UseItem" is a guess at the field name for the left-click/use-item
     /// trigger — it may actually be called MouseLeft. If this still doesn't
     /// make the character use the held item, that's the next thing to check.
@@ -25,7 +30,7 @@ namespace FruitFlyBridge
     {
         public override void ProcessTriggers(TriggersSet triggersSet)
         {
-            if (Player.whoAmI != Main.myPlayer)
+            if (Player.whoAmI != Main.myPlayer || !BridgeSystem.IsClientConnected)
             {
                 return;
             }
