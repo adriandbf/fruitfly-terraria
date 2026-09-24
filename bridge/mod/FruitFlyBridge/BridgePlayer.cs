@@ -10,21 +10,20 @@ namespace FruitFlyBridge
     /// re-sent at 60 Hz. Only touches the client's own player (whoAmI ==
     /// Main.myPlayer); other players are never affected.
     ///
-    /// Sets fields on the *triggersSet* parameter, not Player.controlX
-    /// directly: ProcessTriggers runs before the game copies the current
-    /// trigger state onto Player.controlX, so writing Player.controlX here
-    /// gets immediately overwritten by the real (unpressed) keyboard state.
-    /// (First build attempt set Player.controlX directly — compiled fine,
-    /// did nothing in-game, this is the fix.)
+    /// Sets Player.controlX directly. Confirmed by decompiling the actual
+    /// tModLoader v2026.07.3.0 build (Terraria.GameInput.TriggersSet.CopyInto):
+    /// the game copies its own trigger state onto p.controlLeft/Right/Jump
+    /// (and controlUseItem, from MouseLeft) FIRST, and calls
+    /// PlayerLoader.ProcessTriggers(p, this) — our hook — as the LAST line of
+    /// that same method. So by the time this runs, controlX already holds
+    /// the real keyboard state; writing controlX here is what overrides it,
+    /// and writing the triggersSet parameter instead (tried previously) is a
+    /// no-op for movement, since it's already been read.
     ///
     /// Only overrides while BridgeSystem.IsClientConnected — otherwise this
     /// would force every control to "released" the instant the mod loads,
     /// even with no bridge client running, which is what blocked ALL
-    /// movement (including the real keyboard) on the first live test.
-    ///
-    /// "UseItem" is a guess at the field name for the left-click/use-item
-    /// trigger — it may actually be called MouseLeft. If this still doesn't
-    /// make the character use the held item, that's the next thing to check.
+    /// movement (including the real keyboard) on an earlier test.
     /// </summary>
     public class BridgePlayer : ModPlayer
     {
@@ -36,10 +35,10 @@ namespace FruitFlyBridge
             }
 
             var action = BridgeSystem.GetCurrentAction();
-            triggersSet.Left = action.Left;
-            triggersSet.Right = action.Right;
-            triggersSet.Jump = action.Jump;
-            triggersSet.MouseLeft = action.UseItem;
+            Player.controlLeft = action.Left;
+            Player.controlRight = action.Right;
+            Player.controlJump = action.Jump;
+            Player.controlUseItem = action.UseItem;
         }
     }
 }
