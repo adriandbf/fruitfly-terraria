@@ -97,16 +97,36 @@ python bridge/smoke_test_client.py
 It pings the mod, prints one state snapshot, then holds right for a second
 so you should see the character walk right in-game.
 
+## Scripted dumb policy: `dumb_bot.py`
+
+`bridge/dumb_bot.py` is the Phase 2 "dumb bot": polls `get_state` and calls
+`set_action` at 10 Hz, logging every tick to `logs/dumb_bot_<timestamp>.jsonl`
+(git-ignored). No brain involved — that's Phase 4+.
+
+Policy, in priority order: **flee** a nearby hostile if health drops below
+30% of max, else **attack** the nearest hostile within range, else
+**patrol** back and forth. All three, plus the tile-based auto-jump, are
+confirmed working against the live game (see logs above for an example run
+where the character fought, dropped to 0 HP under `flee`, died, respawned,
+and the bot picked back up in `attack` without crashing).
+
+```bash
+python bridge/dumb_bot.py              # runs until Ctrl+C
+python bridge/dumb_bot.py --seconds 20 # fixed duration, for smoke tests
+```
+
+Known gap: `get_state` doesn't report a dead/ghost state, so the bot keeps
+issuing actions while the character is dead awaiting respawn — harmless
+(nothing to control), but worth fixing if it gets noisy in logs later.
+
 ## Next steps (not yet built)
 
-- A scripted "dumb" policy (Python) that polls `get_state` and calls
-  `set_action` at 10 Hz, per Phase 2.
-- Logging every state/action pair to `logs/` (git-ignored) so runs can be
-  replayed.
-- Verify `use` actually attacks/uses an item, not just left/right/jump.
-- An `attack`/item-use target, since `use` currently just holds the mouse
-  button with whatever's in the active hotbar slot — fine for a dumb bot,
-  not for "attack nearby enemies" later.
+- Logging is per-run only; nothing yet stitches multiple runs together or
+  visualizes them.
+- Detect dead/ghost state in `get_state` so the bot doesn't act on a corpse.
 - Remove the temporary `debug` block in `GameState.BuildSnapshot()`'s
   `in_world: false` response — it was added to diagnose a since-resolved
   false negative and can go once nobody's hit that again.
+- This whole policy is a placeholder to prove the loop, not a real
+  behavior spec — Phase 4 replaces it with the actual encoder/decoder
+  around the fly brain.
