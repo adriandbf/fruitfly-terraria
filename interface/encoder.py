@@ -1,0 +1,121 @@
+"""Phase 4: sensory encoder v0. Game state (from bridge.get_state) -> which
+sensory neurons to stimulate and at what rate, ready for
+FastBrain.stimulate(neuron_ids, rates_hz, ...).
+
+Two channels, both real annotated gustatory receptor neuron populations
+(see brain/neurons.py for the citations and how they were picked):
+  - SUGAR_WATER_GRN: "approach" drive, from the nearest other player (the
+    human) -- reuses the exact appetitive mechanism already validated in
+    Phase 0/3, repurposed as "walk toward the human" per the plan's goal.
+  - BITTER_GRN: "threat nearby" drive, from the nearest hostile NPC --
+    bitter taste is a standard aversive channel in Drosophila.
+
+Both scale rate linearly with proximity (closer = higher Hz, 0 beyond
+max_range). LATERALIZED by which side of the player the target is on,
+splitting drive between each population's left/right sub-groups (full rate
+to the target's side, a smaller fraction to the other) -- an early version
+drove both sides identically, and an offline test with a synthetic game
+state (human due east of the player) confirmed the resulting steering was
+directionless: the network's left/right asymmetry came entirely from its
+own internal wiring bias, not the input, so "left"/"right" in the output
+had no relationship to which side the human was actually on. Real
+gustatory GRNs aren't actually used by flies for
+long-range spatial navigation this way (that's more a visual/plume-tracking
+behavior) -- this is a hand-built v0 stand-in, using "side" from the real
+annotation data (soma/nerve-entry side) as a proxy for "which half of the
+world the target is in", not a claim about real fly gustatory navigation.
+Rates, ranges and the ipsilateral/contralateral split below are hand-picked
+defaults, not tuned; Phase 5's CMA-ES loop is where that tuning belongs.
+"""
+import math
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "brain"))
+import neurons
+
+MAX_RATE_HZ = 150.0  # matches model.py's default r_poi
+
+APPROACH_MAX_RANGE_PX = 2000.0  # ~125 tiles; 0Hz drive beyond this
+THREAT_MAX_RANGE_PX = 800.0     # matches the bridge mod's own NPC report radius
+
+# Contralateral (far) side still gets a fraction of the rate, rather than a
+# hard 0, to avoid a discontinuous on/off flip exactly at dx=0. Untuned.
+CONTRA_FRACTION = 0.15
+
+
+def _nearest(entities, px, py):
+    """Closest entity (dict with 'x'/'y') to (px, py), or None."""
+    best, best_d2 = None, None
+    for e in entities:
+        dx, dy = e["x"] - px, e["y"] - py
+        d2 = dx * dx + dy * dy
+        if best_d2 is None or d2 < best_d2:
+            best, best_d2 = e, d2
+    return best, math.sqrt(best_d2) if best is not None else None
+
+
+def _range_rate(distance, max_range):
+    if distance is None:
+        return 0.0
+    frac = max(0.0, min(1.0, 1.0 - distance / max_range))
+    return MAX_RATE_HZ * frac
+
+
+def _side_of(entity, player_x):
+    return "right" if entity["x"] >= player_x else "left"
+
+
+def compute_drives(state):
+    """The two named channels' rate and side -- the thing worth logging
+    for interpretability. {"approach_hz", "approach_side", "threat_hz",
+    "threat_side"}; side is "left"/"right"/None, all 0/None if not
+    in_world or nothing in range."""
+    if not state.get("in_world"):
+        return {"approach_hz": 0.0, "approach_side": None,
+                "threat_hz": 0.0, "threat_side": None}
+
+    player = state["player"]
+    px, py = player["x"], player["y"]
+
+    human, human_dist = _nearest(state.get("players", []), px, py)
+    approach_rate = _range_rate(human_dist, APPROACH_MAX_RANGE_PX)
+
+    hostiles = [n for n in state.get("npcs", []) if n.get("hostile")]
+    hostile, threat_dist = _nearest(hostiles, px, py)
+    threat_rate = _range_rate(threat_dist, THREAT_MAX_RANGE_PX)
+
+    return {
+        "approach_hz": approach_rate,
+        "approach_side": _side_of(human, px) if human else None,
+        "threat_hz": threat_rate,
+        "threat_side": _side_of(hostile, px) if hostile else None,
+    }
+
+
+def _lateralized(rate, side, left_ids, right_ids):
+    """Split `rate` between left_ids/right_ids: full rate to the side the
+    target is on, CONTRA_FRACTION to the other. side=None (nothing to
+    drive toward) still returns both id lists, just all at 0 (rate is 0
+    in that case anyway, from compute_drives)."""
+    ipsi, contra = (right_ids, left_ids) if side == "right" else (left_ids, right_ids)
+    ids = list(ipsi) + list(contra)
+    rates = [rate] * len(ipsi) + [rate * CONTRA_FRACTION] * len(contra)
+    return ids, rates
+
+
+def encode(state):
+    """state: a get_state response dict.
+    Returns (neuron_ids, rates_hz) lists, ready for FastBrain.stimulate().
+    Empty lists (no drive) if not in_world."""
+    if not state.get("in_world"):
+        return [], []
+
+    drives = compute_drives(state)
+    approach_ids, approach_rates = _lateralized(
+        drives["approach_hz"], drives["approach_side"],
+        neurons.SUGAR_WATER_GRN_LEFT, neurons.SUGAR_WATER_GRN_RIGHT)
+    threat_ids, threat_rates = _lateralized(
+        drives["threat_hz"], drives["threat_side"],
+        neurons.BITTER_GRN_LEFT, neurons.BITTER_GRN_RIGHT)
+    return approach_ids + threat_ids, approach_rates + threat_rates

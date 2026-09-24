@@ -68,11 +68,18 @@ per line. Never listens on a non-loopback address.
   "player": {"x": 1234.0, "y": 678.0, "direction": 1, "hp": 80, "max_hp": 100,
              "mana": 20, "max_mana": 20, "on_ground": true},
   "npcs": [{"type": 1, "name": "Zombie", "x": 1300.0, "y": 670.0, "hp": 250, "hostile": true}],
+  "players": [{"name": "Steve", "x": 1400.0, "y": 660.0, "hp": 90, "max_hp": 100}],
   "tiles": {"origin_tx": 70, "origin_ty": 40, "width": 31, "height": 17,
             "types": [-1, 0, 0, "..."], "solid": [false, true, true, "..."]}
 }
 ```
 If not currently in a world: `{"ok": true, "in_world": false}`.
+
+`players` lists every OTHER active player in the world (not the bot's own
+character, and never NPCs) — added for Phase 4, since the encoder needs the
+human's position for a "walk toward the human" drive and `npcs` never
+contains other players. Untested against a real build (no rebuild/live
+test done yet as of this addition — see CLAUDE.md's Phase 4 status).
 
 NPCs are limited to those within 800px (~50 tiles) of the player. The tile
 grid is a flat row-major array centred on the player, ±15 tiles horizontally

@@ -59,13 +59,23 @@ class FastBrain:
         dt_ms: fixed timestep in ms. Coarser = faster but less precise
             refractory/delay timing resolution (see bench_dt_sweep.py for
             the speed/dt tradeoff measured on the standalone build).
-        exc_indices: neuron indices (0-based, into df_comp's row order) that
-            receive the Poisson "sugar" drive -- same role as `exc` in
-            model.py's poi().
+        exc_indices: neuron INDICES (0-based, into df_comp's row order,
+            NOT FlyWire IDs) that receive the Poisson "sugar" drive for
+            run_ms() -- same role as `exc` in model.py's poi(). This is
+            lower-level plumbing for the benchmark/validation scripts,
+            which already do their own id->index translation. The public,
+            Phase 4-facing API is stimulate(), below, which takes real
+            FlyWire IDs and translates internally -- don't pass FlyWire IDs
+            here directly, they're ~18-digit numbers that would silently
+            read/write far out of bounds (numba doesn't bounds-check
+            array indexing; this crashed the process with a segfault the
+            first time encoder.py's real FlyWire IDs reached this code
+            through the old, single "neuron_ids means indices" contract).
         """
         self.n = len(df_comp)
         self.dt = dt_ms
         self.rng = np.random.default_rng(seed)
+        self.flyid2idx = {int(fid): i for i, fid in enumerate(df_comp.index)}
 
         # --- scalar params, stripped of Brian units (mV, ms) ---
         v0 = float(params['v_0'] / 1e-3)          # volts -> mV
@@ -138,25 +148,37 @@ class FastBrain:
         return self._advance(duration_ms, self.exc_indices, poisson_p)
 
     def stimulate(self, neuron_ids, rates_hz, duration_ms=100):
-        """Phase 3's target API (CLAUDE.md): drive `neuron_ids` with
-        independent Poisson processes at the given `rates_hz` (same
-        mechanism as the model's sugar drive -- each event is a direct kick
-        to v, not g) for duration_ms, then return per-neuron spike RATES in
-        Hz for every neuron in the network (index-aligned with the
-        completeness dataframe this FastBrain was built from) -- look up
-        whichever readout/motor neurons the decoder cares about from the
-        returned array.
+        """Phase 3/4's target API (CLAUDE.md): drive `neuron_ids` -- real
+        FlyWire root IDs, e.g. from brain/neurons.py -- with independent
+        Poisson processes at the given `rates_hz` (same mechanism as the
+        model's sugar drive: each event is a direct kick to v, not g) for
+        duration_ms, then return per-neuron spike RATES in Hz for every
+        neuron in the network, index-aligned with the completeness
+        dataframe this FastBrain was built from (use self.flyid2idx, or
+        rate_for(), to look up a specific neuron's rate by FlyWire ID).
 
         neuron_ids and rates_hz can be empty (no external drive this
         slice) and rates_hz can differ per neuron, unlike run_ms's fixed
-        single rate.
+        single rate. A FlyWire ID not present in this connectome is
+        silently skipped (paired rate dropped with it), not an error.
         """
-        neuron_ids = np.asarray(neuron_ids, dtype=np.int64)
-        rates_hz = np.asarray(rates_hz, dtype=np.float64)
-        poisson_p = rates_hz * (self.dt / 1000.0)
-        _, spike_neurons = self._advance(duration_ms, neuron_ids, poisson_p)
+        indices, kept_rates = [], []
+        for fid, rate in zip(neuron_ids, rates_hz):
+            idx = self.flyid2idx.get(int(fid))
+            if idx is not None:
+                indices.append(idx)
+                kept_rates.append(rate)
+        indices = np.asarray(indices, dtype=np.int64)
+        poisson_p = np.asarray(kept_rates, dtype=np.float64) * (self.dt / 1000.0)
+        _, spike_neurons = self._advance(duration_ms, indices, poisson_p)
         counts = np.bincount(spike_neurons, minlength=self.n)
         return counts / (duration_ms / 1000.0)
+
+    def rate_for(self, rates, flyid):
+        """Look up one neuron's rate (Hz) from stimulate()'s returned array
+        by its real FlyWire ID. 0.0 if that ID isn't in this connectome."""
+        idx = self.flyid2idx.get(int(flyid))
+        return float(rates[idx]) if idx is not None else 0.0
 
     def _advance(self, duration_ms, drive_indices, drive_poisson_p):
         n_steps = round(duration_ms / self.dt)

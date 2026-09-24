@@ -57,9 +57,36 @@ namespace FruitFlyBridge
                     ["on_ground"] = player.velocity.Y == 0f,
                 },
                 ["npcs"] = BuildNpcArray(player),
+                ["players"] = BuildOtherPlayersArray(player),
                 ["tiles"] = BuildTileGrid(player),
             };
             return result;
+        }
+
+        // Other human players in the world (e.g. the PC's player) -- NOT
+        // included in "npcs". Added for Phase 4: the encoder needs the
+        // human's position for a "walk toward the human" drive, and
+        // Main.npc never contains other players.
+        private static JArray BuildOtherPlayersArray(Player player)
+        {
+            var players = new JArray();
+            foreach (var other in Main.player)
+            {
+                if (other == null || !other.active || other.whoAmI == player.whoAmI)
+                {
+                    continue;
+                }
+
+                players.Add(new JObject
+                {
+                    ["name"] = other.name,
+                    ["x"] = other.position.X,
+                    ["y"] = other.position.Y,
+                    ["hp"] = other.statLife,
+                    ["max_hp"] = other.statLifeMax,
+                });
+            }
+            return players;
         }
 
         private static JArray BuildNpcArray(Player player)
