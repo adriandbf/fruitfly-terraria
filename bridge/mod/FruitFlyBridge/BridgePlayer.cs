@@ -1,4 +1,5 @@
 using Terraria;
+using Terraria.GameInput;
 using Terraria.ModLoader;
 
 namespace FruitFlyBridge
