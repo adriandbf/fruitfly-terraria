@@ -9,4 +9,5 @@ brain/data/
 brain/standalone_build_*/
 bridge/mod/*/bin/
 bridge/mod/*/obj/
+bridge/mod/*/Localization/
 *.tmod

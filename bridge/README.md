@@ -11,13 +11,28 @@ Runs only on the Mac, under the Mac's own Steam account — see the Phase 2
 identity decision in CLAUDE.md. The PC's server and the human's client on
 the PC never need this mod (`side = Client` in build.txt).
 
-## Status: scaffolded, UNTESTED
+## Status: working
 
-This was written without a working tModLoader build to compile against, so
-treat every field/method name below as "probably right, unverified." Build
-it and fix whatever the compiler flags — see comments in the .cs files for
-the specific things most likely to have drifted (TriggersSet vs. Player
-control fields, NPC/tile field names).
+Confirmed end to end on the Mac against tModLoader v2026.07.3.0: builds
+clean, `get_state` returns real position/health/NPC/tile data while
+standing in `FruitFlyWorld`, and `set_action` actually moves the character
+(held "right" via the socket walked it right in-game). `use` (attacking/
+item use) hasn't been separately verified yet — only left/right/jump.
+
+Getting movement working took three attempts, mostly around one hook
+(`ModPlayer.ProcessTriggers`): the first version set `Player.controlX`
+unconditionally every tick, which compiled fine but silently blocked ALL
+input, including the real keyboard, because it kept forcing every key to
+"released" whenever no bridge client was connected (the default state).
+The fix for that got bundled with an incorrect switch to writing the
+`TriggersSet` parameter instead of `Player.controlX`, which turned out to
+be backwards — decompiling the actual game code
+(`Terraria.GameInput.TriggersSet.CopyInto`) showed the engine copies
+`TriggersSet` onto `Player.controlLeft`/`Right`/`Jump`/`controlUseItem`
+*before* calling our hook, so writing back to `TriggersSet` there is a
+no-op for movement. `BridgePlayer.cs` now sets `Player.controlX` directly,
+gated on `BridgeSystem.IsClientConnected`, which is the combination that
+actually works.
 
 ## Install on the Mac
 
@@ -88,6 +103,10 @@ so you should see the character walk right in-game.
   `set_action` at 10 Hz, per Phase 2.
 - Logging every state/action pair to `logs/` (git-ignored) so runs can be
   replayed.
+- Verify `use` actually attacks/uses an item, not just left/right/jump.
 - An `attack`/item-use target, since `use` currently just holds the mouse
   button with whatever's in the active hotbar slot — fine for a dumb bot,
   not for "attack nearby enemies" later.
+- Remove the temporary `debug` block in `GameState.BuildSnapshot()`'s
+  `in_world: false` response — it was added to diagnose a since-resolved
+  false negative and can go once nobody's hit that again.
