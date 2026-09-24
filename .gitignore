@@ -7,3 +7,6 @@ brain/data/
 *.parquet
 *.feather
 brain/standalone_build_*/
+bridge/mod/*/bin/
+bridge/mod/*/obj/
+*.tmod

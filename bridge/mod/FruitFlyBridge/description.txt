@@ -1,0 +1,3 @@
+Runs a local JSON-over-TCP server (127.0.0.1 only) so an external process
+(the fly brain's control loop, in Python) can read this client's game state
+and drive its movement/actions. Not a gameplay mod, not needed on the server.

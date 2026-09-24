@@ -1,0 +1,10 @@
+displayName = Fruit Fly Bridge
+author = adrian fudge
+version = 0.1
+homepage =
+description = Local JSON-over-TCP bridge: exposes player/NPC/tile state and accepts held-key actions from the fly brain's control loop. Client-side only; the server and other players never need this mod.
+side = Client
+modReferences =
+weakReferences =
+sortAfter =
+sortBefore =
