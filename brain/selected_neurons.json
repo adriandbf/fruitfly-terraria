@@ -1362,6 +1362,736 @@
         "side": "left",
         "top_nt": "acetylcholine"
       }
+    ],
+    "lc4_looming": [
+      {
+        "root_id": "720575940618002644",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940626916936",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940632769180",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940630484495",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940612518055",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940634517856",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940633580384",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940649229433",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940630998339",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940618723749",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940616066705",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940615232217",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940630851036",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940631032657",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940633013355",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940615462587",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940621145821",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940613256863",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940617266722",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940626605200",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940628419527",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940624017251",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940622939836",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940617176321",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940628518400",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940612498129",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940624111763",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940639817947",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940625932421",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940625038090",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940632715234",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940610522009",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940616713355",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940629753807",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940627519107",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940622531767",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940638456227",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940636957006",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940622330582",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940620903551",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940618266459",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940617026260",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940615127227",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940605598892",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940620314221",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940621522458",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940612093351",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940612580977",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940618234704",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940624856762",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940628599895",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940614582946",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940612323025",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940628699560",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940628454522",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940626553596",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940625934973",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940632475449",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940641213824",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940613260959",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940628606713",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940625845447",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940625906702",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940620795728",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940613638041",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940614914107",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940620731380",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940638496720",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940631338271",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940617348379",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940613609484",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940652611745",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940633218863",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940615575007",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940630154660",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940618709158",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940625991043",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940626626895",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940628891863",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940624790781",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940615053580",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940621753579",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940628081541",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940614572742",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940622108001",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940629964591",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940645821316",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940640612480",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940628462340",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940618267227",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940619397542",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940603637438",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940625841351",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940618234715",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940612380723",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940620314612",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940618807105",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940635835967",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940618275520",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940612968421",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940611134833",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940618312606",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940628064260",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940618676440",
+        "cell_type": "LC4",
+        "hemibrain_type": "LC4",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      }
     ]
   },
   "descending": {

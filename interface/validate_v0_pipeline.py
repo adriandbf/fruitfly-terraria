@@ -6,10 +6,10 @@ of what the real connectome does with these specific real neurons, since
 some of it turned out to be genuinely surprising (see the asymmetry note
 below) and worth being able to reproduce rather than just remembering.
 
-Run this against a live bridge connection instead (interface/run_fly.py)
-once the mod's rebuilt with the new "players" field -- this script only
-exercises the brain/encoder/decoder side with synthetic states, no live
-game test has been done yet.
+This script only exercises the brain/encoder/decoder side with synthetic
+states; interface/run_fly.py is the live version. Approach and the LC4-
+based threat/jump pathway have both since been confirmed live too -- see
+CLAUDE.md's status for the live test results.
 
 Usage: python interface/validate_v0_pipeline.py
 """

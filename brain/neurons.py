@@ -87,6 +87,28 @@ Findings from that sweep:
     total neurons active vs. thousands), so a stronger threat-side
     substitute may need a different channel entirely, not just a
     different neuron -- a Phase 5 question, not fixed here.
+
+UPDATE, threat pathway found: bitter GRN was a genuine dead end (~50-90
+neurons active total, no descending/motor hit at any strength, confirmed
+in real live combat -- character took damage and never reacted). Real fly
+threat/escape circuits are visual, not gustatory, so brain/
+find_looming_pathway.py swept known looming-detector types (lobula
+columnar / visual-projection class) instead. Result:
+    LC4_LOOMING -- 104 neurons (~half per side). LC4: the canonically
+        published primary visual input to the Giant Fiber escape circuit
+        (von Reyn et al. 2014; Ache et al. 2019), and empirically strong
+        and bilateral here too -- drives DNP01_JUMP to 100Hz (right) /
+        90Hz (left) sustained. Two other candidates (LC6: 170/140Hz, LPLC2:
+        160/140Hz) drove DNp01 even harder, but LC4 was kept as the primary
+        pick for its more directly-published GF connection; LC6/LPLC2
+        remain documented options if LC4 alone proves too weak live.
+    Replaces BITTER_GRN as the "threat nearby" sensory channel in
+    encoder.py. Jump itself needed no decoder change -- DNp01 was already
+    the correct target, it just never had a working input before.
+    Not addressed: "use"/attack still has no dedicated pathway (LC4 also
+    drives DNp02/DNp04/DNp05/DNp11, other escape-related descending
+    neurons not currently read by decoder.py -- a candidate for later,
+    not confirmed to mean "attack" specifically).
 """
 import json
 from pathlib import Path
@@ -110,6 +132,12 @@ SUGAR_WATER_GRN_RIGHT = _ids_by_side("sensory", "sugar_water_grn", "right")
 BITTER_GRN = _ids("sensory", "bitter_grn")
 BITTER_GRN_LEFT = _ids_by_side("sensory", "bitter_grn", "left")
 BITTER_GRN_RIGHT = _ids_by_side("sensory", "bitter_grn", "right")
+
+# Confirmed dead as a threat channel (see docstring) -- kept only for
+# reference/re-testing, not used by encoder.py anymore.
+LC4_LOOMING = _ids("sensory", "lc4_looming")
+LC4_LOOMING_LEFT = _ids_by_side("sensory", "lc4_looming", "left")
+LC4_LOOMING_RIGHT = _ids_by_side("sensory", "lc4_looming", "right")
 
 # --- descending (decoder) ---
 DNP09_FORWARD = _ids("descending", "DNp09_forward_walk")

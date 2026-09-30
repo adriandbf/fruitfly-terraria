@@ -2,13 +2,20 @@
 sensory neurons to stimulate and at what rate, ready for
 FastBrain.stimulate(neuron_ids, rates_hz, ...).
 
-Two channels, both real annotated gustatory receptor neuron populations
-(see brain/neurons.py for the citations and how they were picked):
+Two channels (see brain/neurons.py for the citations and how they were
+picked):
   - SUGAR_WATER_GRN: "approach" drive, from the nearest other player (the
     human) -- reuses the exact appetitive mechanism already validated in
     Phase 0/3, repurposed as "walk toward the human" per the plan's goal.
-  - BITTER_GRN: "threat nearby" drive, from the nearest hostile NPC --
-    bitter taste is a standard aversive channel in Drosophila.
+  - LC4_LOOMING: "threat nearby" drive, from the nearest hostile NPC.
+    Originally BITTER_GRN (gustatory/bitter) -- confirmed dead live (real
+    combat, character took damage, never reacted; ~50-90 total neurons
+    active, no descending/motor hit at any strength). Real fly threat/
+    escape circuits are visual, not gustatory: LC4 is a lobula columnar
+    looming-detector neuron, the canonically published primary visual
+    input to the Giant Fiber escape circuit -- and empirically drives
+    DNp01 (this project's jump target) strongly and bilaterally
+    (brain/find_looming_pathway.py).
 
 Both scale rate linearly with proximity (closer = higher Hz, 0 beyond
 max_range). LATERALIZED by which side of the player the target is on,
@@ -126,5 +133,5 @@ def encode(state, params=None):
         neurons.SUGAR_WATER_GRN_LEFT, neurons.SUGAR_WATER_GRN_RIGHT, p["contra_fraction"])
     threat_ids, threat_rates = _lateralized(
         drives["threat_hz"], drives["threat_side"],
-        neurons.BITTER_GRN_LEFT, neurons.BITTER_GRN_RIGHT, p["contra_fraction"])
+        neurons.LC4_LOOMING_LEFT, neurons.LC4_LOOMING_RIGHT, p["contra_fraction"])
     return approach_ids + threat_ids, approach_rates + threat_rates
