@@ -24,8 +24,14 @@ long-range spatial navigation this way (that's more a visual/plume-tracking
 behavior) -- this is a hand-built v0 stand-in, using "side" from the real
 annotation data (soma/nerve-entry side) as a proxy for "which half of the
 world the target is in", not a claim about real fly gustatory navigation.
-Rates, ranges and the ipsilateral/contralateral split below are hand-picked
-defaults, not tuned; Phase 5's CMA-ES loop is where that tuning belongs.
+
+Phase 5: the four numeric knobs below (DEFAULT_PARAMS) are exactly what
+training/train_cma.py tunes via CMA-ES -- compute_drives()/encode() take
+an optional `params` dict (any missing key falls back to the default) so
+the training loop can pass in a candidate parameter vector without
+touching this module's globals. Called with no `params`, behavior is
+unchanged from before Phase 5 (existing callers -- run_fly.py,
+validate_v0_pipeline.py -- are unaffected).
 """
 import math
 import sys
@@ -34,14 +40,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "brain"))
 import neurons
 
-MAX_RATE_HZ = 150.0  # matches model.py's default r_poi
-
-APPROACH_MAX_RANGE_PX = 2000.0  # ~125 tiles; 0Hz drive beyond this
-THREAT_MAX_RANGE_PX = 800.0     # matches the bridge mod's own NPC report radius
-
-# Contralateral (far) side still gets a fraction of the rate, rather than a
-# hard 0, to avoid a discontinuous on/off flip exactly at dx=0. Untuned.
-CONTRA_FRACTION = 0.15
+DEFAULT_PARAMS = {
+    "max_rate_hz": 150.0,          # matches model.py's default r_poi
+    "approach_max_range_px": 2000.0,  # ~125 tiles; 0Hz drive beyond this
+    "threat_max_range_px": 800.0,     # matches the bridge mod's own NPC report radius
+    # Contralateral (far) side still gets a fraction of the rate, rather
+    # than a hard 0, to avoid a discontinuous on/off flip exactly at dx=0.
+    "contra_fraction": 0.15,
+}
 
 
 def _nearest(entities, px, py):
@@ -55,22 +61,23 @@ def _nearest(entities, px, py):
     return best, math.sqrt(best_d2) if best is not None else None
 
 
-def _range_rate(distance, max_range):
-    if distance is None:
+def _range_rate(distance, max_range, max_rate_hz):
+    if distance is None or max_range <= 0:
         return 0.0
     frac = max(0.0, min(1.0, 1.0 - distance / max_range))
-    return MAX_RATE_HZ * frac
+    return max_rate_hz * frac
 
 
 def _side_of(entity, player_x):
     return "right" if entity["x"] >= player_x else "left"
 
 
-def compute_drives(state):
+def compute_drives(state, params=None):
     """The two named channels' rate and side -- the thing worth logging
     for interpretability. {"approach_hz", "approach_side", "threat_hz",
     "threat_side"}; side is "left"/"right"/None, all 0/None if not
     in_world or nothing in range."""
+    p = {**DEFAULT_PARAMS, **(params or {})}
     if not state.get("in_world"):
         return {"approach_hz": 0.0, "approach_side": None,
                 "threat_hz": 0.0, "threat_side": None}
@@ -79,11 +86,11 @@ def compute_drives(state):
     px, py = player["x"], player["y"]
 
     human, human_dist = _nearest(state.get("players", []), px, py)
-    approach_rate = _range_rate(human_dist, APPROACH_MAX_RANGE_PX)
+    approach_rate = _range_rate(human_dist, p["approach_max_range_px"], p["max_rate_hz"])
 
     hostiles = [n for n in state.get("npcs", []) if n.get("hostile")]
     hostile, threat_dist = _nearest(hostiles, px, py)
-    threat_rate = _range_rate(threat_dist, THREAT_MAX_RANGE_PX)
+    threat_rate = _range_rate(threat_dist, p["threat_max_range_px"], p["max_rate_hz"])
 
     return {
         "approach_hz": approach_rate,
@@ -93,29 +100,31 @@ def compute_drives(state):
     }
 
 
-def _lateralized(rate, side, left_ids, right_ids):
+def _lateralized(rate, side, left_ids, right_ids, contra_fraction):
     """Split `rate` between left_ids/right_ids: full rate to the side the
-    target is on, CONTRA_FRACTION to the other. side=None (nothing to
+    target is on, contra_fraction to the other. side=None (nothing to
     drive toward) still returns both id lists, just all at 0 (rate is 0
     in that case anyway, from compute_drives)."""
     ipsi, contra = (right_ids, left_ids) if side == "right" else (left_ids, right_ids)
     ids = list(ipsi) + list(contra)
-    rates = [rate] * len(ipsi) + [rate * CONTRA_FRACTION] * len(contra)
+    rates = [rate] * len(ipsi) + [rate * contra_fraction] * len(contra)
     return ids, rates
 
 
-def encode(state):
-    """state: a get_state response dict.
+def encode(state, params=None):
+    """state: a get_state response dict. params: optional overrides for
+    any of DEFAULT_PARAMS (Phase 5's CMA-ES loop passes candidate values).
     Returns (neuron_ids, rates_hz) lists, ready for FastBrain.stimulate().
     Empty lists (no drive) if not in_world."""
     if not state.get("in_world"):
         return [], []
 
-    drives = compute_drives(state)
+    p = {**DEFAULT_PARAMS, **(params or {})}
+    drives = compute_drives(state, p)
     approach_ids, approach_rates = _lateralized(
         drives["approach_hz"], drives["approach_side"],
-        neurons.SUGAR_WATER_GRN_LEFT, neurons.SUGAR_WATER_GRN_RIGHT)
+        neurons.SUGAR_WATER_GRN_LEFT, neurons.SUGAR_WATER_GRN_RIGHT, p["contra_fraction"])
     threat_ids, threat_rates = _lateralized(
         drives["threat_hz"], drives["threat_side"],
-        neurons.BITTER_GRN_LEFT, neurons.BITTER_GRN_RIGHT)
+        neurons.BITTER_GRN_LEFT, neurons.BITTER_GRN_RIGHT, p["contra_fraction"])
     return approach_ids + threat_ids, approach_rates + threat_rates

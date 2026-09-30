@@ -137,6 +137,25 @@ class FastBrain:
         self._spike_steps = []
         self._spike_neurons = []
 
+        self._v0 = v0  # kept for reset_state()
+
+    def reset_state(self, seed=None):
+        """Reset neural dynamics to the resting state (v=v0, g=0, no
+        refractory, empty delay buffer, step counter back to 0) WITHOUT
+        rebuilding the connectivity structure (CSR arrays) -- that's the
+        expensive one-time part, and Phase 5's training loop needs to run
+        many short episodes, each starting from a clean brain. seed=None
+        keeps the current RNG stream going (still reproducible run-to-run
+        if the whole training script itself is seeded); pass an int to
+        make this specific reset's Poisson draws reproducible on their own."""
+        self.v.fill(self._v0)
+        self.g.fill(0.0)
+        self.refractory_until_step.fill(-1)
+        self.delay_buffer.fill(0.0)
+        self.step = 0
+        if seed is not None:
+            self.rng = np.random.default_rng(seed)
+
     def run_ms(self, duration_ms):
         """Advance the simulation by duration_ms, driving the fixed sugar
         neurons from __init__ at r_poi, and return spikes fired during this

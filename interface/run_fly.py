@@ -15,7 +15,10 @@ world to walk toward.
 Uses the v783 connectome (not v630, which Phases 0-3 validated against) --
 see brain/neurons.py's docstring for why.
 
-Usage: python interface/run_fly.py [--seconds N]
+Usage: python interface/run_fly.py [--seconds N] [--params-file PATH]
+--params-file loads a Phase 5 training/train_cma.py output (e.g.
+training/best_params.json) to use CMA-ES-tuned parameters instead of
+encoder.py/decoder.py's hand-picked defaults.
 """
 import argparse
 import json
@@ -71,7 +74,7 @@ def rates_for_readout(brain, rates):
     return {fid: brain.rate_for(rates, fid) for fid in neurons.ALL_DESCENDING}
 
 
-def run(duration_s=None):
+def run(duration_s=None, enc_params=None, dec_params=None):
     LOG_DIR.mkdir(exist_ok=True)
     log_path = LOG_DIR / f"run_fly_{datetime.now():%Y%m%d_%H%M%S}.jsonl"
     print(f"Building brain (v783, dt={DT_MS}ms)...")
@@ -96,13 +99,13 @@ def run(duration_s=None):
                     loop_start = time.monotonic()
 
                     state = bridge.request({"cmd": "get_state"})
-                    drives = encoder.compute_drives(state)
-                    neuron_ids, rates_hz = encoder.encode(state)
+                    drives = encoder.compute_drives(state, enc_params)
+                    neuron_ids, rates_hz = encoder.encode(state, enc_params)
                     spike_rates = brain.stimulate(neuron_ids, rates_hz, duration_ms=100)
                     readout = rates_for_readout(brain, spike_rates)
 
                     player_dir = (state.get("player") or {}).get("direction", 1)
-                    action = decoder.decode(readout, player_dir)
+                    action = decoder.decode(readout, player_dir, dec_params)
                     bridge.request({"cmd": "set_action", **action})
 
                     log_file.write(json.dumps({
@@ -134,9 +137,22 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seconds", type=float, default=None,
                          help="run for a fixed duration instead of until Ctrl+C")
+    parser.add_argument("--params-file", type=str, default=None,
+                         help="path to a Phase 5 training/train_cma.py output "
+                              "(e.g. training/best_params.json) to use tuned "
+                              "encoder/decoder parameters instead of the hand-picked "
+                              "defaults in encoder.py/decoder.py")
     args = parser.parse_args()
+
+    enc_params, dec_params = None, None
+    if args.params_file:
+        data = json.loads(Path(args.params_file).read_text())
+        enc_params, dec_params = data["encoder"], data["decoder"]
+        print(f"Using tuned params from {args.params_file} "
+              f"(trained reward: {data.get('best_reward', '?')})")
+
     try:
-        run(duration_s=args.seconds)
+        run(duration_s=args.seconds, enc_params=enc_params, dec_params=dec_params)
     except KeyboardInterrupt:
         print("\nStopping, releasing keys...")
 

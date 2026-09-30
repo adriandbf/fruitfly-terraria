@@ -31,11 +31,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "brain"))
 import neurons
 
-FORWARD_THRESHOLD_HZ = 20.0
-BACKWARD_THRESHOLD_HZ = 20.0
-STEER_MARGIN_HZ = 5.0     # min left/right DNa02 gap before committing to a side
-JUMP_THRESHOLD_HZ = 30.0  # Giant Fiber: fast, decisive, high-threshold in real flies
-USE_THRESHOLD_HZ = 15.0
+# Phase 5: these five are exactly what training/train_cma.py tunes via
+# CMA-ES -- decode() takes an optional `params` dict (any missing key
+# falls back to the default) so the training loop can pass a candidate
+# vector without touching this module's globals. Called with no `params`,
+# behavior is unchanged from before Phase 5.
+DEFAULT_PARAMS = {
+    "forward_threshold_hz": 20.0,
+    "backward_threshold_hz": 20.0,
+    "steer_margin_hz": 5.0,     # min left/right DNa02 gap before committing to a side
+    "jump_threshold_hz": 30.0,  # Giant Fiber: fast, decisive, high-threshold in real flies
+    "use_threshold_hz": 15.0,
+}
 
 
 def _mean_rate(rates_by_flyid, flyids):
@@ -48,14 +55,17 @@ def _max_rate(rates_by_flyid, flyids):
     return max(vals) if vals else 0.0
 
 
-def decode(rates_by_flyid, player_direction):
+def decode(rates_by_flyid, player_direction, params=None):
     """rates_by_flyid: {flywire_id: spike_rate_hz} for (at least) the
     descending neurons in brain/neurons.py -- missing entries treated as 0.
     player_direction: the character's current facing, 1 or -1 (from
     get_state's player.direction), since "forward"/"backward" are relative
     to heading, not absolute left/right.
+    params: optional overrides for any of DEFAULT_PARAMS.
     Returns {"left": bool, "right": bool, "jump": bool, "use": bool}.
     """
+    p = {**DEFAULT_PARAMS, **(params or {})}
+
     forward_rate = _max_rate(rates_by_flyid, neurons.DNB05_MOVE)
     backward_rate = _mean_rate(rates_by_flyid, neurons.MDN_BACKWARD)
     left_steer = _mean_rate(rates_by_flyid, neurons.DNA02_STEERING_LEFT)
@@ -70,20 +80,20 @@ def decode(rates_by_flyid, player_direction):
     # why DNb05/the swapped DNa02 sign replaced the original DNp09/naive-
     # sign version).
     direction = 0
-    if (backward_rate > BACKWARD_THRESHOLD_HZ
+    if (backward_rate > p["backward_threshold_hz"]
             and backward_rate >= steer_gap and backward_rate >= forward_rate):
         direction = -player_direction  # retreat: opposite of current facing
-    elif steer_gap > STEER_MARGIN_HZ:
+    elif steer_gap > p["steer_margin_hz"]:
         # Sign is deliberately reversed vs. a naive "steer toward the more
         # active side" reading -- left_steer dominating empirically means
         # the target is on the RIGHT in this connectome (see docstring).
         direction = 1 if left_steer > right_steer else -1
-    elif forward_rate > FORWARD_THRESHOLD_HZ:
+    elif forward_rate > p["forward_threshold_hz"]:
         direction = player_direction  # keep walking the way we're facing
 
     return {
         "left": direction < 0,
         "right": direction > 0,
-        "jump": jump_rate > JUMP_THRESHOLD_HZ,
-        "use": use_rate > USE_THRESHOLD_HZ,
+        "jump": jump_rate > p["jump_threshold_hz"],
+        "use": use_rate > p["use_threshold_hz"],
     }
