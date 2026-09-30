@@ -59,6 +59,31 @@ namespace FruitFlyBridge
                 ["npcs"] = BuildNpcArray(player),
                 ["players"] = BuildOtherPlayersArray(player),
                 ["tiles"] = BuildTileGrid(player),
+                // Temporary diagnostics: a held "right" produced zero
+                // movement in a live multiplayer test, with manual
+                // keyboard control confirmed working and no UI open (so
+                // not a Main.hasFocus / chat / menu gate). Surfacing the
+                // actual applied control values and known movement-
+                // blocking flags instead of guessing at another fix blind.
+                // isOperatingAnotherEntity is a real Player field (mounts/
+                // vehicles zero all movement controls AFTER ProcessTriggers
+                // runs, which would exactly explain this). frozen/stoned/
+                // CCed are from memory of the Player class, not verified
+                // against this exact tModLoader version -- if any of these
+                // don't compile, that's the build error to fix, drop the
+                // offending line(s) rather than guess at a different name.
+                ["debug"] = new JObject
+                {
+                    ["has_focus"] = Main.hasFocus,
+                    ["control_left"] = player.controlLeft,
+                    ["control_right"] = player.controlRight,
+                    ["velocity_x"] = player.velocity.X,
+                    ["is_operating_another_entity"] = player.isOperatingAnotherEntity,
+                    ["mount_active"] = player.mount != null && player.mount.Active,
+                    ["frozen"] = player.frozen,
+                    ["stoned"] = player.stoned,
+                    ["cc_immune"] = player.CCed,
+                },
             };
             return result;
         }

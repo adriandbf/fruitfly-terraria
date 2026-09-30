@@ -134,6 +134,13 @@ issuing actions while the character is dead awaiting respawn — harmless
 - Remove the temporary `debug` block in `GameState.BuildSnapshot()`'s
   `in_world: false` response — it was added to diagnose a since-resolved
   false negative and can go once nobody's hit that again.
+- Also temporary: a second `debug` block in the normal (`in_world: true`)
+  response, added to diagnose a held `right` action producing zero
+  movement in a live multiplayer test even with manual keyboard control
+  confirmed working — surfaces `Main.hasFocus`, the actual applied
+  `controlLeft`/`controlRight`/`velocity.X`, and known movement-blocking
+  flags (`isOperatingAnotherEntity`, mount, frozen/stoned/CCed). Remove
+  once that's root-caused.
 - This whole policy is a placeholder to prove the loop, not a real
   behavior spec — Phase 4 replaces it with the actual encoder/decoder
   around the fly brain.
