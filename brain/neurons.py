@@ -51,6 +51,42 @@ No literature-established "attack nearby enemy" descending neuron was
 identified for v0 -- decoder.py falls back to overall descending-ensemble
 activity for that action, flagged there as the weakest-grounded part of
 this pass, to revisit once real neurons.
+
+UPDATE after the first live test (character took real damage, 100->77 HP,
+and never reacted at all -- confirmed offline first in
+interface/validate_v0_pipeline.py, then live): none of the four neurons
+above ever actually fired from either sensory channel, sustained, at max
+drive (brain/find_reachable_motor_neurons.py, a diagnostic sweep
+cross-referencing every neuron that DOES light up against the real
+annotation table's descending/motor categories, not just these four).
+Findings from that sweep:
+    DNB05_MOVE -- 2 neurons (1 per side). DNb05: NOT independently
+        published for a specific behavior as far as this search found, but
+        empirically the strongest, cleanest signal in this connectome for
+        this project's approach channel -- fires strongly and bilaterally
+        (200Hz left / 180Hz right) under sustained sugar_right drive, and
+        not at all under sugar_left. Replaces DNP09_FORWARD as the "is
+        there something to move toward" gate; DNp09 itself never fired
+        from either sensory channel at all.
+    DNA02_STEERING's sign was backwards, not its existence: DNa02_LEFT
+        fires specifically when sugar_right (not sugar_left) is driven --
+        confirmed in both the original un-lateralized test and this
+        diagnostic. Since sugar_right is driven at full rate specifically
+        when the target is on the right (encoder.py's lateralization),
+        "DNa02_left active" empirically means "target is on the right",
+        the opposite of what a naive ipsilateral-steering assumption would
+        predict. Plausibly a crossed (contralateral) pathway from this
+        particular sensory population to DNa02 in this individually
+        reconstructed brain -- decoder.py now uses the sign the data
+        actually show, not the textbook default.
+    No usable substitute was found for MDN (backward) or DNp01 (jump) --
+    neither ever appeared active under either sensory channel in the
+    sweep. Left as-is (real, cited neurons that just don't fire from
+    these particular inputs yet); the bitter/threat channel overall
+    remains much weaker than sugar/approach in this connectome (~50-70
+    total neurons active vs. thousands), so a stronger threat-side
+    substitute may need a different channel entirely, not just a
+    different neuron -- a Phase 5 question, not fixed here.
 """
 import json
 from pathlib import Path
@@ -88,4 +124,8 @@ MDN_BACKWARD = _ids("descending", "MDN_backward_walk")
 
 DNP01_JUMP = _ids("descending", "DNp01_giant_fiber_jump")
 
-ALL_DESCENDING = DNP09_FORWARD + DNA02_STEERING + MDN_BACKWARD + DNP01_JUMP
+DNB05_MOVE = _ids("descending", "DNb05_forward_v2")
+DNB05_MOVE_LEFT = _ids_by_side("descending", "DNb05_forward_v2", "left")
+DNB05_MOVE_RIGHT = _ids_by_side("descending", "DNb05_forward_v2", "right")
+
+ALL_DESCENDING = DNP09_FORWARD + DNA02_STEERING + MDN_BACKWARD + DNP01_JUMP + DNB05_MOVE

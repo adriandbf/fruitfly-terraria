@@ -50,7 +50,7 @@ RELEASE = {"left": False, "right": False, "jump": False, "use": False}
 # note in CLAUDE.md-style logging convention: this is a deliberate, small,
 # purposeful subset, not "log everything").
 READOUT_GROUPS = {
-    "DNp09_forward": neurons.DNP09_FORWARD,
+    "DNb05_forward": neurons.DNB05_MOVE,
     "DNa02_left": neurons.DNA02_STEERING_LEFT,
     "DNa02_right": neurons.DNA02_STEERING_RIGHT,
     "MDN_backward": neurons.MDN_BACKWARD,

@@ -2,16 +2,28 @@
 FastBrain.stimulate's output) -> a game action dict, per the real,
 individually-identified descending neurons picked in brain/neurons.py:
 
-  DNp09 (forward walk), DNa02 (steering), MDN (backward walk), DNp01 ==
+  DNb05 (movement gate), DNa02 (steering), MDN (backward walk), DNp01 ==
   Giant Fiber (jump). No literature-established "attack" descending neuron
   was found, so "use" falls back to overall descending-ensemble activity --
   flagged below as the weakest-grounded part of this v0 pass.
 
-Priority, each step: retreat (MDN) overrides steer/forward (DNp09/DNa02)
+Priority, each step: retreat (MDN) overrides steer/forward (DNb05/DNa02)
 overrides idle. Jump and "use" are independent of the movement decision.
 All thresholds are hand-picked defaults for v0, not tuned -- Phase 5's
 CMA-ES loop is where that belongs; don't read anything into the specific
 numbers beyond "plausible starting point".
+
+Two things this v0 got wrong the first time, both caught by a live test
+(character took real damage, never reacted at all) and a follow-up
+diagnostic sweep (brain/find_reachable_motor_neurons.py) -- see
+brain/neurons.py's docstring for the full account:
+  - DNp09 (the original forward-walk pick) never actually fires from
+    either sensory channel in this connectome -- swapped for DNb05, which
+    empirically does, strongly.
+  - The DNa02 left/right comparison had its sign backwards: DNa02_LEFT
+    fires specifically when the target is on the RIGHT (confirmed twice,
+    independently), the opposite of a naive ipsilateral-steering
+    assumption. Fixed below.
 """
 import sys
 from pathlib import Path
@@ -44,7 +56,7 @@ def decode(rates_by_flyid, player_direction):
     to heading, not absolute left/right.
     Returns {"left": bool, "right": bool, "jump": bool, "use": bool}.
     """
-    forward_rate = _max_rate(rates_by_flyid, neurons.DNP09_FORWARD)
+    forward_rate = _max_rate(rates_by_flyid, neurons.DNB05_MOVE)
     backward_rate = _mean_rate(rates_by_flyid, neurons.MDN_BACKWARD)
     left_steer = _mean_rate(rates_by_flyid, neurons.DNA02_STEERING_LEFT)
     right_steer = _mean_rate(rates_by_flyid, neurons.DNA02_STEERING_RIGHT)
@@ -53,21 +65,19 @@ def decode(rates_by_flyid, player_direction):
 
     steer_gap = abs(right_steer - left_steer)
 
-    # Originally gated steering behind forward_rate crossing its own
-    # threshold ("DNp09 initiates, DNa02 steers"), on the assumption that's
-    # how the two would divide labor here. A live check (see CLAUDE.md/
-    # run_fly.py history) showed the real connectome doesn't route this
-    # project's gustatory sensory drive through DNp09 at all -- it only
-    # ever reached DNa02, so movement never triggered though a clear,
-    # usable steering signal (DNa02 asymmetry) was present the whole time.
-    # Each signal now independently competes to set direction, backward
-    # only winning if it's the strongest of the three.
+    # Each signal independently competes to set direction, backward only
+    # winning if it's the strongest of the three (see module docstring for
+    # why DNb05/the swapped DNa02 sign replaced the original DNp09/naive-
+    # sign version).
     direction = 0
     if (backward_rate > BACKWARD_THRESHOLD_HZ
             and backward_rate >= steer_gap and backward_rate >= forward_rate):
         direction = -player_direction  # retreat: opposite of current facing
     elif steer_gap > STEER_MARGIN_HZ:
-        direction = 1 if right_steer > left_steer else -1
+        # Sign is deliberately reversed vs. a naive "steer toward the more
+        # active side" reading -- left_steer dominating empirically means
+        # the target is on the RIGHT in this connectome (see docstring).
+        direction = 1 if left_steer > right_steer else -1
     elif forward_rate > FORWARD_THRESHOLD_HZ:
         direction = player_direction  # keep walking the way we're facing
 

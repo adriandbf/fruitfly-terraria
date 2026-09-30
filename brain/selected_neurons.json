@@ -1442,6 +1442,22 @@
         "side": "left",
         "top_nt": "acetylcholine"
       }
+    ],
+    "DNb05_forward_v2": [
+      {
+        "root_id": "720575940628352850",
+        "cell_type": "DNb05",
+        "hemibrain_type": "DNb05",
+        "side": "left",
+        "top_nt": "acetylcholine"
+      },
+      {
+        "root_id": "720575940629461442",
+        "cell_type": "DNb05",
+        "hemibrain_type": "DNb05",
+        "side": "right",
+        "top_nt": "acetylcholine"
+      }
     ]
   }
 }
