@@ -15,10 +15,15 @@ world to walk toward.
 Uses the v783 connectome (not v630, which Phases 0-3 validated against) --
 see brain/neurons.py's docstring for why.
 
-Usage: python interface/run_fly.py [--seconds N] [--params-file PATH]
+Usage: python interface/run_fly.py [--seconds N] [--params-file PATH] [--no-obstacle-assist]
 --params-file loads a Phase 5 training/train_cma.py output (e.g.
 training/best_params.json) to use CMA-ES-tuned parameters instead of
 encoder.py/decoder.py's hand-picked defaults.
+
+By default a scripted assist (obstacle_assist.py) adds a jump when the
+character walks into a clearable step. That is NOT the fly -- every
+logged tick records jump_source ("brain"/"assist"), and
+--no-obstacle-assist turns it off so all actions come from the brain.
 """
 import argparse
 import json
@@ -38,6 +43,7 @@ from fast_sim import FastBrain
 import neurons
 import encoder
 import decoder
+from obstacle_assist import ObstacleAssist
 from dumb_bot import Bridge  # reuse the tested socket client from Phase 2
 
 TICK_HZ = 10
@@ -74,7 +80,7 @@ def rates_for_readout(brain, rates):
     return {fid: brain.rate_for(rates, fid) for fid in neurons.ALL_DESCENDING}
 
 
-def run(duration_s=None, enc_params=None, dec_params=None):
+def run(duration_s=None, enc_params=None, dec_params=None, obstacle_assist=True):
     LOG_DIR.mkdir(exist_ok=True)
     log_path = LOG_DIR / f"run_fly_{datetime.now():%Y%m%d_%H%M%S}.jsonl"
     print(f"Building brain (v783, dt={DT_MS}ms)...")
@@ -85,6 +91,7 @@ def run(duration_s=None, enc_params=None, dec_params=None):
     tick = 0
     start = time.monotonic()
     was_dead = False  # persists across bridge reconnects, like the brain itself
+    assist = ObstacleAssist() if obstacle_assist else None
 
     with open(log_path, "w") as log_file:
         while duration_s is None or time.monotonic() - start < duration_s:
@@ -123,6 +130,8 @@ def run(duration_s=None, enc_params=None, dec_params=None):
                         continue
                     if was_dead:
                         brain.reset_state()
+                        if assist is not None:
+                            assist.reset()
                         was_dead = False
                         print(f"tick {tick:6d}  respawned -- brain state reset")
 
@@ -133,6 +142,11 @@ def run(duration_s=None, enc_params=None, dec_params=None):
 
                     player_dir = (state.get("player") or {}).get("direction", 1)
                     action = decoder.decode(readout, player_dir, dec_params)
+                    # Scripted assist, NOT the fly: see obstacle_assist.py. Logged
+                    # per tick so an assisted jump is never credited to the brain.
+                    assisted = False
+                    if assist is not None:
+                        action, assisted = assist.apply(state, action)
                     bridge.request({"cmd": "set_action", **action})
 
                     log_file.write(json.dumps({
@@ -141,6 +155,7 @@ def run(duration_s=None, enc_params=None, dec_params=None):
                         "decoder_rates": {name: sum(readout.get(f, 0.0) for f in ids) / max(len(ids), 1)
                                           for name, ids in READOUT_GROUPS.items()},
                         "action": action,
+                        "jump_source": ("assist" if assisted else "brain") if action["jump"] else None,
                     }) + "\n")
                     log_file.flush()
 
@@ -169,6 +184,10 @@ def main():
                               "(e.g. training/best_params.json) to use tuned "
                               "encoder/decoder parameters instead of the hand-picked "
                               "defaults in encoder.py/decoder.py")
+    parser.add_argument("--no-obstacle-assist", action="store_true",
+                         help="turn off the scripted jump-over-steps assist "
+                              "(interface/obstacle_assist.py) so every action, "
+                              "jumps included, comes from the fly brain alone")
     args = parser.parse_args()
 
     enc_params, dec_params = None, None
@@ -179,7 +198,8 @@ def main():
               f"(trained reward: {data.get('best_reward', '?')})")
 
     try:
-        run(duration_s=args.seconds, enc_params=enc_params, dec_params=dec_params)
+        run(duration_s=args.seconds, enc_params=enc_params, dec_params=dec_params,
+            obstacle_assist=not args.no_obstacle_assist)
     except KeyboardInterrupt:
         print("\nStopping, releasing keys...")
 
