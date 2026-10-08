@@ -42,6 +42,11 @@ DEFAULT_PARAMS = {
     "steer_margin_hz": 5.0,     # min left/right DNa02 gap before committing to a side
     "jump_threshold_hz": 30.0,  # Giant Fiber: fast, decisive, high-threshold in real flies
     "use_threshold_hz": 15.0,
+    # StatefulDecoder (flee) only -- decode() ignores these:
+    "flee_on_hz": 30.0,        # Giant Fiber rate that starts a flee
+    "flee_off_hz": 15.0,       # ...and the lower rate that keeps it going (hysteresis)
+    "flee_hold_ticks": 5,      # keep fleeing this long (0.5s) after it drops below
+    "startle_hold_ticks": 1,   # startle-hop jump key hold: 1 tick ~ 6 frames ~ a ~3.8-tile hop
 }
 
 
@@ -97,3 +102,87 @@ def decode(rates_by_flyid, player_direction, params=None):
         "jump": jump_rate > p["jump_threshold_hz"],
         "use": use_rate > p["use_threshold_hz"],
     }
+
+
+class StatefulDecoder:
+    """decode() plus a flee reflex. Needs state across ticks, so it's a class;
+    decode() stays stateless for the training arena and older callers.
+
+    Design, chosen with the user: when a threat is near, do a one-time
+    STARTLE HOP and RUN AWAY from it; fear beats approach.
+      - Threat = Giant Fiber (DNp01) rate >= flee_on_hz, kept going while it
+        stays >= flee_off_hz, then held flee_hold_ticks more (hysteresis +
+        hold, because GF flickers around the threshold at range).
+      - Direction comes from the BRAIN: DNa02 is a clean, mirror-symmetric,
+        crossed code for "which side the stimulus is on" (hostile on the
+        right -> DNa02_L fires): 100% correct when it fires, in 86% of
+        slices (interface/validate_threat_direction.py). When DNa02 is
+        silent the Giant Fiber's L-vs-R lean breaks the tie; when both are
+        silent the last decided direction is held. Flee = the opposite way.
+        Before any direction has ever been decided, the fly hops but doesn't
+        run (a coin-flip run risks running INTO the threat).
+      - The hop is ONE jump per threat onset, then the key is released: the
+        engine only starts a new jump after a frame with jump NOT held
+        (releaseJump), so a held key gives exactly one hop and pins the key.
+        It re-arms once the threat is over.
+      - Fear beats approach has two halves: the ENCODER silences the approach
+        drive near a threat (so the shared DNa02 readout is threat-pure --
+        see encoder.approach_suppression_hz), and here, while fleeing, the
+        base approach/steering decision is ignored entirely.
+    Outside a flee this is exactly decode() with jump forced off.
+    """
+
+    def __init__(self, params=None):
+        self.p = {**DEFAULT_PARAMS, **(params or {})}
+        self.reset()
+
+    def reset(self):
+        self._active = False
+        self._hold_left = 0
+        self._hop_left = 0
+        self._flee_dir = 0     # +1 run right / -1 run left / 0 not yet decided
+        self.last_mode = "base"
+        self.last_flee_dir = 0
+
+    def decode(self, rates_by_flyid, player_direction):
+        p = self.p
+        gf = _max_rate(rates_by_flyid, neurons.DNP01_JUMP)
+
+        if gf >= p["flee_on_hz"] or (self._active and gf >= p["flee_off_hz"]):
+            active, self._hold_left = True, p["flee_hold_ticks"]
+        elif self._hold_left > 0:
+            active, self._hold_left = True, self._hold_left - 1
+        else:
+            active = False
+        onset = active and not self._active
+        self._active = active
+
+        if not active:
+            self._flee_dir, self._hop_left = 0, 0
+            action = decode(rates_by_flyid, player_direction, p)
+            action["jump"] = False
+            self.last_mode, self.last_flee_dir = "base", 0
+            return action
+
+        if onset:
+            self._hop_left = p["startle_hold_ticks"]
+
+        # Which side is the threat on? DNa02 first, GF lean as tie-break.
+        evidence = (_mean_rate(rates_by_flyid, neurons.DNA02_STEERING_LEFT)
+                    - _mean_rate(rates_by_flyid, neurons.DNA02_STEERING_RIGHT))  # +: stimulus on the right
+        if evidence == 0:
+            evidence = (_mean_rate(rates_by_flyid, neurons.DNP01_JUMP_RIGHT)
+                        - _mean_rate(rates_by_flyid, neurons.DNP01_JUMP_LEFT))
+        if evidence != 0:
+            self._flee_dir = -1 if evidence > 0 else 1   # run the OTHER way
+
+        hop = self._hop_left > 0
+        if hop:
+            self._hop_left -= 1
+        self.last_mode, self.last_flee_dir = "flee", self._flee_dir
+        return {
+            "left": self._flee_dir < 0,
+            "right": self._flee_dir > 0,
+            "jump": hop,
+            "use": False,
+        }

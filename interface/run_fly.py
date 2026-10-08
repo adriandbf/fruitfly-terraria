@@ -92,6 +92,7 @@ def run(duration_s=None, enc_params=None, dec_params=None, obstacle_assist=True)
     start = time.monotonic()
     was_dead = False  # persists across bridge reconnects, like the brain itself
     assist = ObstacleAssist() if obstacle_assist else None
+    flee = decoder.StatefulDecoder(dec_params)  # decode() + the flee reflex
 
     with open(log_path, "w") as log_file:
         while duration_s is None or time.monotonic() - start < duration_s:
@@ -130,6 +131,7 @@ def run(duration_s=None, enc_params=None, dec_params=None, obstacle_assist=True)
                         continue
                     if was_dead:
                         brain.reset_state()
+                        flee.reset()
                         if assist is not None:
                             assist.reset()
                         was_dead = False
@@ -141,7 +143,7 @@ def run(duration_s=None, enc_params=None, dec_params=None, obstacle_assist=True)
                     readout = rates_for_readout(brain, spike_rates)
 
                     player_dir = (state.get("player") or {}).get("direction", 1)
-                    action = decoder.decode(readout, player_dir, dec_params)
+                    action = flee.decode(readout, player_dir)
                     # Scripted assist, NOT the fly: see obstacle_assist.py. Logged
                     # per tick so an assisted jump is never credited to the brain.
                     assisted = False
@@ -155,13 +157,15 @@ def run(duration_s=None, enc_params=None, dec_params=None, obstacle_assist=True)
                         "decoder_rates": {name: sum(readout.get(f, 0.0) for f in ids) / max(len(ids), 1)
                                           for name, ids in READOUT_GROUPS.items()},
                         "action": action,
+                        "decoder_mode": flee.last_mode,
+                        "flee_dir": flee.last_flee_dir,
                         "jump_source": ("assist" if assisted else "brain") if action["jump"] else None,
                     }) + "\n")
                     log_file.flush()
 
                     if tick % TICK_HZ == 0:  # once a second
                         hp = (state.get("player") or {}).get("hp")
-                        print(f"tick {tick:6d}  in_world={state.get('in_world')}  hp={hp}  action={action}")
+                        print(f"tick {tick:6d}  in_world={state.get('in_world')}  hp={hp}  mode={flee.last_mode}  action={action}")
 
                     tick += 1
                     elapsed = time.monotonic() - loop_start

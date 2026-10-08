@@ -63,7 +63,11 @@ PARAM_SPEC = [
 
 def unit_to_params(unit_vec):
     """[0,1]^9 -> ({encoder params}, {decoder params}), clipped to bounds."""
-    enc, dec = {}, {}
+    # This arena only scores approach and its hostile is inert, so pin the
+    # encoder's fear-suppresses-appetite rule OFF: otherwise a hostile in
+    # half the episodes would silently change what the saved results mean.
+    # (Live, run_fly.py leaves it on -- the encoder default.)
+    enc, dec = {"approach_suppression_hz": 0.0}, {}
     for (module, key, lo, hi), u in zip(PARAM_SPEC, unit_vec):
         u = min(1.0, max(0.0, u))
         value = lo + u * (hi - lo)

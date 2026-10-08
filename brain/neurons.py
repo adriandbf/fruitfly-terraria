@@ -151,6 +151,8 @@ DNA02_STEERING_RIGHT = _ids_by_side("descending", "DNa02_steering", "right")
 MDN_BACKWARD = _ids("descending", "MDN_backward_walk")
 
 DNP01_JUMP = _ids("descending", "DNp01_giant_fiber_jump")
+DNP01_JUMP_LEFT = _ids_by_side("descending", "DNp01_giant_fiber_jump", "left")
+DNP01_JUMP_RIGHT = _ids_by_side("descending", "DNp01_giant_fiber_jump", "right")
 
 DNB05_MOVE = _ids("descending", "DNb05_forward_v2")
 DNB05_MOVE_LEFT = _ids_by_side("descending", "DNb05_forward_v2", "left")

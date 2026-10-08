@@ -54,6 +54,17 @@ DEFAULT_PARAMS = {
     # Contralateral (far) side still gets a fraction of the rate, rather
     # than a hard 0, to avoid a discontinuous on/off flip exactly at dx=0.
     "contra_fraction": 0.15,
+    # Fear beats appetite, enforced HERE at the sensory stage (a hand-written
+    # arbitration rule, not something the brain computes): approach drive is
+    # scaled by max(0, 1 - threat_hz / this). 0 disables it. Why it can't be
+    # done in the decoder: both channels drive the same steering neuron
+    # (DNa02), and with a human AND a hostile present the approach signal
+    # swamps the threat's weak one -- measured per 100ms slice, the threat-
+    # side readout was only 77% correct unsuppressed (5/35 with the human on
+    # the right and the hostile on the left: it would flee INTO the hostile)
+    # versus 100% correct with approach suppressed. 50Hz of threat drive is
+    # a hostile within ~530px at the default range.
+    "approach_suppression_hz": 50.0,
 }
 
 
@@ -82,12 +93,13 @@ def _side_of(entity, player_x):
 def compute_drives(state, params=None):
     """The two named channels' rate and side -- the thing worth logging
     for interpretability. {"approach_hz", "approach_side", "threat_hz",
-    "threat_side"}; side is "left"/"right"/None, all 0/None if not
-    in_world or nothing in range."""
+    "threat_side", "approach_scale"}; side is "left"/"right"/None, all 0/None
+    if not in_world or nothing in range. approach_hz is AFTER suppression by
+    a nearby threat; approach_scale is the factor applied (1.0 = none)."""
     p = {**DEFAULT_PARAMS, **(params or {})}
     if not state.get("in_world"):
         return {"approach_hz": 0.0, "approach_side": None,
-                "threat_hz": 0.0, "threat_side": None}
+                "threat_hz": 0.0, "threat_side": None, "approach_scale": 1.0}
 
     player = state["player"]
     px, py = player["x"], player["y"]
@@ -99,11 +111,17 @@ def compute_drives(state, params=None):
     hostile, threat_dist = _nearest(hostiles, px, py)
     threat_rate = _range_rate(threat_dist, p["threat_max_range_px"], p["max_rate_hz"])
 
+    # Fear beats appetite (see approach_suppression_hz above).
+    supp = p["approach_suppression_hz"]
+    approach_scale = max(0.0, 1.0 - threat_rate / supp) if supp > 0 else 1.0
+    approach_rate *= approach_scale
+
     return {
         "approach_hz": approach_rate,
         "approach_side": _side_of(human, px) if human else None,
         "threat_hz": threat_rate,
         "threat_side": _side_of(hostile, px) if hostile else None,
+        "approach_scale": approach_scale,
     }
 
 
