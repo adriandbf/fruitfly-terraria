@@ -28,16 +28,37 @@ height is <= max_jump_tiles AND there are `headroom_tiles` clear rows
 above its top for the body to land into (the character is ~2.6 tiles
 tall, so it needs a 3-tile gap).
 
-max_jump_tiles=3 is a CONSERVATIVE GUESS, not a measurement -- nobody has
-measured this character's actual jump height in this project. If steps of
-that height turn out clearable (or not), change it from data. Likewise
-hold_ticks=3 (~300ms at 10Hz) is meant to cover the ~15-frame (~250ms)
-variable-height jump window in vanilla Terraria: releasing jump early cuts
-the ascent short, which would drop the character back against the step.
+max_jump_tiles=5 is derived, not guessed -- from the game's own code
+(decompiled tModLoader v2026.07.3.0, Terraria.Player): jumpHeight=15 frames
+of jumpSpeed=5.01 px/frame while jump is held, then gravity 0.4/frame, so
+the apex is ~15*5.01 + 5.01^2/(2*0.4) = ~106px = ~6.7 tiles. A step must be
+<= ~6 tiles to clear; 5 leaves a tile of margin. Live evidence is partial
+and noisy (interface/probe_step_clearing.py: 2/4/5-tall pillars cleared;
+a "cleared 7" is physically impossible and was an artifact of natural
+terrain), so this is a physics-based bound with loose live support, not a
+tight measurement.
+
+Two engine facts the first draft of this module got wrong:
+  - A new jump only starts after `releaseJump`, which the game sets only on
+    a frame where jump is NOT held (Player.Update: `else { jump = 0;
+    releaseJump = true; }`). Holding jump continuously gives exactly one
+    jump. So after the hold we force one jump=False tick (cooldown) before
+    any re-trigger; without it a persistent obstacle re-triggered on the
+    very next tick, jump stayed held forever, and a second step (or a
+    second attempt) would never fire.
+  - The jump only rises as far as the ceiling above the CHARACTER allows,
+    so the player's own column must be clear for `height` rows above the
+    head. The real 5-tall wall that stalled a live run had a cave ceiling
+    two rows above the head; the old 3-tile cap declined it by luck.
+Walking onto a 1-tile ledge needs no jump at all (Collision.StepUp), so
+height-1 triggers are harmless but redundant.
+
+hold_ticks=3 (~300ms at 10Hz) covers the 15-frame (~250ms) variable-height
+window: releasing jump early cuts the ascent short.
 """
 
 DEFAULT_PARAMS = {
-    "max_jump_tiles": 3,
+    "max_jump_tiles": 5,
     "headroom_tiles": 3,
     "hold_ticks": 3,
 }
@@ -49,10 +70,12 @@ class ObstacleAssist:
         self.max_jump_tiles = p["max_jump_tiles"]
         self.headroom_tiles = p["headroom_tiles"]
         self.hold_ticks = p["hold_ticks"]
-        self._hold = 0  # remaining ticks to keep jump held after a trigger
+        self._hold = 0      # remaining ticks to keep jump held after a trigger
+        self._cooldown = 0  # forced jump=False ticks after a hold (releaseJump)
 
     def reset(self):
         self._hold = 0
+        self._cooldown = 0
 
     def apply(self, state, action):
         """Returns (action, assisted). `action` is not mutated. assisted is
@@ -62,15 +85,24 @@ class ObstacleAssist:
         action = dict(action)
         if action.get("jump"):
             self._hold = 0
+            self._cooldown = 0
             return action, False
 
         if self._hold > 0:
             self._hold -= 1
+            if self._hold == 0:
+                self._cooldown = 1  # next tick must release jump
             action["jump"] = True
             return action, True
 
+        if self._cooldown > 0:
+            self._cooldown -= 1
+            return action, False
+
         if self._should_jump(state, action):
             self._hold = self.hold_ticks - 1
+            if self._hold == 0:
+                self._cooldown = 1
             action["jump"] = True
             return action, True
 
@@ -118,4 +150,11 @@ class ObstacleAssist:
             row = top_row - k
             if row >= 0 and solid[row * w + col]:
                 return False  # ceiling too low to land on top
+        # The jump can only rise as far as the ceiling over the CHARACTER
+        # allows: rows cy-2 up to cy-1-height (the body occupies cy-1..cy+1)
+        # in the player's own column must be clear.
+        for k in range(2, height + 2):
+            row = cy - k
+            if row >= 0 and solid[row * w + cx]:
+                return False  # would hit its head before reaching the top
         return True

@@ -56,19 +56,21 @@ def check(name, cond):
 print("synthetic grids")
 a = ObstacleAssist()
 check("flat ground: no jump", a.apply(state(make_grid(0)), RIGHT) == (RIGHT, False))
-for h in (1, 2, 3):
+for h in (1, 2, 3, 4, 5):
     act, assisted = ObstacleAssist().apply(state(make_grid(h)), RIGHT)
     check(f"{h}-tile step ahead: jumps", act["jump"] and assisted)
-for h in (4, 5):
+for h in (6, 7):
     act, assisted = ObstacleAssist().apply(state(make_grid(h)), RIGHT)
-    check(f"{h}-tile wall: declines (too tall)", not act["jump"] and not assisted)
+    check(f"{h}-tile wall: declines (past the ~6.7-tile physics apex margin)", not act["jump"] and not assisted)
 # ceiling_above_top=k puts a solid tile k rows above the step top, so k=1 is
 # ADJACENT (it merges into the wall, making it taller), and k-1 rows are
 # free between step and ceiling.
 check("ceiling adjacent to a 2-step merges into a 3-tall wall: still clearable",
       ObstacleAssist().apply(state(make_grid(2, ceiling_above_top=1)), RIGHT)[0]["jump"])
-check("ceiling adjacent to a 3-step merges into a 4-tall wall: declines",
-      not ObstacleAssist().apply(state(make_grid(3, ceiling_above_top=1)), RIGHT)[0]["jump"])
+check("ceiling adjacent to a 4-step merges into a 5-tall wall: still clearable",
+      ObstacleAssist().apply(state(make_grid(4, ceiling_above_top=1)), RIGHT)[0]["jump"])
+check("ceiling adjacent to a 5-step merges into a 6-tall wall: declines",
+      not ObstacleAssist().apply(state(make_grid(5, ceiling_above_top=1)), RIGHT)[0]["jump"])
 check("low ceiling with one free row above a 2-step: declines (can't stand on it)",
       not ObstacleAssist().apply(state(make_grid(2, ceiling_above_top=2)), RIGHT)[0]["jump"])
 check("ceiling exactly at the headroom limit (3 above) is a problem",
@@ -94,15 +96,46 @@ original = dict(RIGHT)
 ObstacleAssist().apply(state(make_grid(2)), original)
 check("input action not mutated", original == RIGHT)
 
-print("hold window")
+print("player's own headroom (the jump can't rise past a ceiling over the character)")
+def with_own_ceiling(tiles, rows_above_center):
+    solid = list(tiles["solid"])
+    solid[(CY - rows_above_center) * W + CX] = True
+    return dict(tiles, solid=solid)
+g = make_grid(3)  # needs the 3 rows above the head (cy-2..cy-4) clear
+check("3-step, ceiling 5 rows above center (clear of the needed 3): jumps",
+      ObstacleAssist().apply(state(with_own_ceiling(g, 5)), RIGHT)[0]["jump"])
+check("3-step, ceiling 4 rows above center (inside the needed span): declines",
+      not ObstacleAssist().apply(state(with_own_ceiling(g, 4)), RIGHT)[0]["jump"])
+check("3-step, ceiling 2 rows above center (right over the head): declines",
+      not ObstacleAssist().apply(state(with_own_ceiling(g, 2)), RIGHT)[0]["jump"])
+check("a ceiling over the player does not block walking when there's no step",
+      not ObstacleAssist().apply(state(with_own_ceiling(make_grid(0), 2)), RIGHT)[0]["jump"])
+
+print("hold window + release gap")
 a = ObstacleAssist()  # hold_ticks=3
 flat = state(make_grid(0))
 seq = [a.apply(state(make_grid(2)), RIGHT)[0]["jump"]] + [a.apply(flat, RIGHT)[0]["jump"] for _ in range(3)]
 check("jump held for exactly 3 ticks after a trigger, then released", seq == [True, True, True, False])
+
+# The engine only starts a new jump after a frame with jump NOT held
+# (releaseJump), so a still-present obstacle must not keep jump pinned on.
+a = ObstacleAssist()
+stuck = state(make_grid(2))
+pattern = [a.apply(stuck, RIGHT)[0]["jump"] for _ in range(9)]
+check("persistent obstacle: hold 3, release 1, hold 3, release 1... (never pinned on)",
+      pattern == [True, True, True, False, True, True, True, False, True], )
+runs, run = [], 0
+for v in pattern:
+    if v: run += 1
+    elif run: runs.append(run); run = 0
+if run: runs.append(run)
+check("no run of held jump is longer than the 3-tick hold (jump is released between presses)",
+      max(runs) <= 3 and len(runs) >= 2)
+
 a = ObstacleAssist()
 a.apply(state(make_grid(2)), RIGHT)
 act, _ = a.apply(flat, dict(RIGHT, jump=True))
-check("a brain jump cancels any leftover hold", a._hold == 0)
+check("a brain jump cancels any leftover hold and cooldown", a._hold == 0 and a._cooldown == 0)
 
 print("real logged grids")
 logs = sorted(glob.glob(str(Path(__file__).parent.parent / "logs" / "*.jsonl")))
@@ -115,6 +148,9 @@ else:
         h = ObstacleAssist().obstacle_height(rec["state"]["tiles"], 1)
         act, assisted = ObstacleAssist().apply(rec["state"], RIGHT)
         check(f"the real live stall (5-tall wall, x=33756): height={h}, declines", h == 5 and not act["jump"])
+        lifted, _ = ObstacleAssist({"max_jump_tiles": 99}).apply(rec["state"], RIGHT)
+        check("...and still declines with the height cap lifted: the cave ceiling over the "
+              "player is what makes it unjumpable", not lifted["jump"])
 
     # Every tick where Phase 2's old 1-tile heuristic really fired in a live
     # run: the new logic must agree wherever its stricter headroom rule is
