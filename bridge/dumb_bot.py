@@ -58,6 +58,9 @@ class DumbPolicy:
             return dict(RELEASE)
 
         player = state["player"]
+        if player.get("dead") or player.get("ghost"):
+            self.last_mode = "dead"
+            return dict(RELEASE)
         npcs = state.get("npcs", [])
         low_health = player["max_hp"] > 0 and player["hp"] / player["max_hp"] < FLEE_HP_FRACTION
 

@@ -55,6 +55,13 @@ namespace FruitFlyBridge
                     ["mana"] = player.statMana,
                     ["max_mana"] = player.statManaMax,
                     ["on_ground"] = player.velocity.Y == 0f,
+                    // Vanilla Player.Update branches on these two fields
+                    // before any control processing, so while either is
+                    // true no input (ours or the keyboard's) does anything.
+                    // Added after a live test where the character died to
+                    // a zombie swarm and the bot kept acting on the corpse.
+                    ["dead"] = player.dead,
+                    ["ghost"] = player.ghost,
                 },
                 ["npcs"] = BuildNpcArray(player),
                 ["players"] = BuildOtherPlayersArray(player),

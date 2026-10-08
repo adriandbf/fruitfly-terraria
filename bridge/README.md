@@ -66,7 +66,8 @@ per line. Never listens on a non-loopback address.
   "ok": true,
   "in_world": true,
   "player": {"x": 1234.0, "y": 678.0, "direction": 1, "hp": 80, "max_hp": 100,
-             "mana": 20, "max_mana": 20, "on_ground": true},
+             "mana": 20, "max_mana": 20, "on_ground": true,
+             "dead": false, "ghost": false},
   "npcs": [{"type": 1, "name": "Zombie", "x": 1300.0, "y": 670.0, "hp": 250, "hostile": true}],
   "players": [{"name": "Steve", "x": 1400.0, "y": 660.0, "hp": 90, "max_hp": 100}],
   "tiles": {"origin_tx": 70, "origin_ty": 40, "width": 31, "height": 17,
@@ -122,15 +123,21 @@ python bridge/dumb_bot.py              # runs until Ctrl+C
 python bridge/dumb_bot.py --seconds 20 # fixed duration, for smoke tests
 ```
 
-Known gap: `get_state` doesn't report a dead/ghost state, so the bot keeps
-issuing actions while the character is dead awaiting respawn — harmless
-(nothing to control), but worth fixing if it gets noisy in logs later.
+Dead/ghost handling: `get_state`'s `player` now carries `dead` and `ghost`
+booleans (vanilla `Player.Update` branches on both before any control
+processing, so while either is true no input does anything). Originally a
+known gap — a live test where the character died to a zombie swarm showed
+the bot happily issuing actions and logging for the rest of the run.
+`dumb_bot.py` releases all keys while dead; `interface/run_fly.py` also
+stops stepping the brain, then resets neural state on respawn so the new
+life doesn't inherit frozen mid-panic activity. The Python side is tested
+offline against a fake bridge; the C# fields need a rebuild and a live
+death to confirm end to end.
 
 ## Next steps (not yet built)
 
 - Logging is per-run only; nothing yet stitches multiple runs together or
   visualizes them.
-- Detect dead/ghost state in `get_state` so the bot doesn't act on a corpse.
 - Remove the temporary `debug` block in `GameState.BuildSnapshot()`'s
   `in_world: false` response — it was added to diagnose a since-resolved
   false negative and can go once nobody's hit that again.

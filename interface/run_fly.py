@@ -84,6 +84,7 @@ def run(duration_s=None, enc_params=None, dec_params=None):
 
     tick = 0
     start = time.monotonic()
+    was_dead = False  # persists across bridge reconnects, like the brain itself
 
     with open(log_path, "w") as log_file:
         while duration_s is None or time.monotonic() - start < duration_s:
@@ -99,6 +100,32 @@ def run(duration_s=None, enc_params=None, dec_params=None):
                     loop_start = time.monotonic()
 
                     state = bridge.request({"cmd": "get_state"})
+
+                    # Dead/ghost: the game ignores all input until respawn, so
+                    # don't step the brain (it'd keep integrating whatever
+                    # killed it) or issue actions -- just release keys and log.
+                    # On the first alive tick after, reset neural state so the
+                    # new life doesn't inherit frozen mid-panic activity.
+                    p = state.get("player") or {}
+                    is_dead = bool(p.get("dead") or p.get("ghost"))
+                    if is_dead:
+                        was_dead = True
+                        bridge.request({"cmd": "set_action", **RELEASE})
+                        log_file.write(json.dumps({
+                            "tick": tick, "t": time.time(), "state": state,
+                            "dead": True, "action": RELEASE,
+                        }) + "\n")
+                        log_file.flush()
+                        if tick % TICK_HZ == 0:
+                            print(f"tick {tick:6d}  DEAD -- holding, waiting for respawn")
+                        tick += 1
+                        time.sleep(max(0.0, TICK_S - (time.monotonic() - loop_start)))
+                        continue
+                    if was_dead:
+                        brain.reset_state()
+                        was_dead = False
+                        print(f"tick {tick:6d}  respawned -- brain state reset")
+
                     drives = encoder.compute_drives(state, enc_params)
                     neuron_ids, rates_hz = encoder.encode(state, enc_params)
                     spike_rates = brain.stimulate(neuron_ids, rates_hz, duration_ms=100)
