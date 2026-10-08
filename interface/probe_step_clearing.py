@@ -24,7 +24,7 @@ Terraria window focused (input is ignored otherwise), then:
     python interface/probe_step_clearing.py [--dir right|left] [--seconds 60]
 
 Every tick is logged to logs/probe_step_*.jsonl so any result can be
-checked against the raw positions. Stops early if it stalls 5s on one step.
+checked against the raw positions. Stops early if it stalls 5s on one step, or at a ledge (7+ tile drop).
 """
 import argparse
 import json
@@ -48,6 +48,20 @@ RISE_TOLERANCE = 0.25  # tiles; need to rise ~the step's height to be standing o
 PHYSICS_APEX_TILES = 6.7  # from the decompiled jump constants; see obstacle_assist.py
 LOG_DIR = ROOT / "logs"
 RELEASE = {"left": False, "right": False, "jump": False, "use": False}
+
+
+def ledge_ahead(tiles, sign):
+    """True if the column right ahead has NO solid tile anywhere from the
+    floor row down to the bottom of the visible grid -- i.e. a drop of at
+    least ~7 tiles. A first live run walked off the end of a platform after
+    the last pillar and died of fall damage (a ~40-tile fall), so the probe
+    now stops at a ledge instead. Small steps down are fine; the grid can't
+    see deeper than ~7 tiles below the feet, so any drop that reaches the
+    bottom of the view counts as one worth refusing."""
+    w, h = tiles["width"], tiles["height"]
+    cx, cy = w // 2, h // 2
+    col = cx + sign
+    return not any(tiles["solid"][row * w + col] for row in range(cy + 2, h))
 
 
 def verdict(e):
@@ -128,6 +142,11 @@ def run(direction, seconds, bridge_factory=Bridge, log_path=None):
             p = st.get("player") or {}
             if p.get("dead") or p.get("ghost"):
                 print("character died -- stopping.")
+                break
+
+            if st.get("tiles") and p.get("on_ground", True) and ledge_ahead(st["tiles"], sign):
+                print(f"ledge ahead at x={p['x']:.0f} (a drop of 7+ tiles) -- stopping before "
+                      f"walking off it. No more pillars past this point.")
                 break
 
             action = dict(RELEASE, **{key: True})

@@ -28,15 +28,22 @@ height is <= max_jump_tiles AND there are `headroom_tiles` clear rows
 above its top for the body to land into (the character is ~2.6 tiles
 tall, so it needs a 3-tile gap).
 
-max_jump_tiles=5 is derived, not guessed -- from the game's own code
-(decompiled tModLoader v2026.07.3.0, Terraria.Player): jumpHeight=15 frames
-of jumpSpeed=5.01 px/frame while jump is held, then gravity 0.4/frame, so
-the apex is ~15*5.01 + 5.01^2/(2*0.4) = ~106px = ~6.7 tiles. A step must be
-<= ~6 tiles to clear; 5 leaves a tile of margin. Live evidence is partial
-and noisy (interface/probe_step_clearing.py: 2/4/5-tall pillars cleared;
-a "cleared 7" is physically impossible and was an artifact of natural
-terrain), so this is a physics-based bound with loose live support, not a
-tight measurement.
+max_jump_tiles=5 now rests on a measurement as well as the physics.
+Physics (decompiled tModLoader v2026.07.3.0, Terraria.Player): jumpHeight=15
+frames of jumpSpeed=5.01 px/frame while jump is held, then gravity 0.4, so
+the frame-by-frame apex is ~104px (~6.5 tiles). Live
+(interface/probe_step_clearing.py, one clean run, brain bypassed, pillars
+>=10 tiles apart, per-tick logged): 2-, 3-, 4- and 5-tall pillars were all
+cleared, each as its own grounded encounter, and every assisted jump had an
+essentially identical profile -- rise 1.7, 3.5, 5.1, 6.0, 5.9, 4.9, 2.9
+tiles at 10Hz, apex 96-98px (6.0-6.1 tiles), ~0.7s airborne. So a jump rises
+about 6 tiles: a 5-tall pillar clears with about a tile to spare, a 6-tall
+one is marginal at best (feet must end up above its top) and nothing taller
+is possible. 5 is therefore the right cap. NOT measured: whether a 6-tall
+pillar clears (the run ended at the platform edge before one was met), and
+the ~8px gap between the measured 96-98px apex and the 104px computed one is
+unexplained (10Hz sampling can undershoot the true apex by a few px; the
+rest is unaccounted for).
 
 Two engine facts the first draft of this module got wrong:
   - A new jump only starts after `releaseJump`, which the game sets only on
