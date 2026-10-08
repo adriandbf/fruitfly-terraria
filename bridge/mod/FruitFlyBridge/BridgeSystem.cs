@@ -15,7 +15,9 @@ namespace FruitFlyBridge
     /// </summary>
     public class ActionState
     {
-        public bool Left, Right, Jump, UseItem;
+        public bool Left, Right, Jump, UseItem, Up, Down;
+        public bool HasAim;
+        public float AimX, AimY;
 
         public void CopyFrom(ActionState other)
         {
@@ -23,6 +25,11 @@ namespace FruitFlyBridge
             Right = other.Right;
             Jump = other.Jump;
             UseItem = other.UseItem;
+            Up = other.Up;
+            Down = other.Down;
+            HasAim = other.HasAim;
+            AimX = other.AimX;
+            AimY = other.AimY;
         }
     }
 
@@ -64,6 +71,12 @@ namespace FruitFlyBridge
                 copy.CopyFrom(PendingAction);
             }
             return copy;
+        }
+
+        /// <summary>Release every held key (used by reset_episode).</summary>
+        public static void ReleaseAll()
+        {
+            SetCurrentAction(new ActionState());
         }
 
         private static void SetCurrentAction(ActionState next)
@@ -153,6 +166,10 @@ namespace FruitFlyBridge
         private JObject HandleRequest(JObject request)
         {
             var cmd = (string)request["cmd"];
+            if (Episode.KeepFocus)
+            {
+                FocusHack.ForceActive(); // see Harness.cs: single-player pauses when unfocused
+            }
             switch (cmd)
             {
                 case "ping":
@@ -168,9 +185,48 @@ namespace FruitFlyBridge
                         Right = (bool?)request["right"] ?? false,
                         Jump = (bool?)request["jump"] ?? false,
                         UseItem = (bool?)request["use"] ?? false,
+                        Up = (bool?)request["up"] ?? false,
+                        Down = (bool?)request["down"] ?? false,
+                        HasAim = request["aim_x"] != null && request["aim_y"] != null
+                                 && request["aim_x"].Type != JTokenType.Null,
+                        AimX = (float?)request["aim_x"] ?? 0f,
+                        AimY = (float?)request["aim_y"] ?? 0f,
                     };
                     SetCurrentAction(action);
                     return new JObject { ["ok"] = true };
+
+                // ---- Goal 2 (Moon Lord) harness, see Harness.cs ----------
+                case "get_episode":
+                    return new JObject { ["ok"] = true, ["episode"] = Episode.ToJson() };
+
+                case "set_keep_focus":
+                    Episode.KeepFocus = (bool?)request["enabled"] ?? true;
+                    return new JObject { ["ok"] = true, ["keep_focus"] = Episode.KeepFocus,
+                                         ["force_active_available"] = FocusHack.Available };
+
+                case "set_arena":
+                    return HarnessSystem.RunOnGameThread(() => HarnessSystem.SetArena(request));
+
+                case "reset_episode":
+                    return HarnessSystem.RunOnGameThread(() => HarnessSystem.ResetEpisode(request));
+
+                case "spawn_npc":
+                    return HarnessSystem.RunOnGameThread(() => HarnessSystem.SpawnNpc(request));
+
+                case "spawn_projectile":
+                    return HarnessSystem.RunOnGameThread(() => HarnessSystem.SpawnProjectile(request));
+
+                case "equip_loadout":
+                    return HarnessSystem.RunOnGameThread(() => Setup.EquipLoadout(request));
+
+                case "apply_buffs":
+                    return HarnessSystem.RunOnGameThread(() => Setup.ApplyBuffs(request));
+
+                case "build_arena":
+                    return HarnessSystem.RunOnGameThread(() => Setup.BuildArena(request));
+
+                case "select_slot":
+                    return HarnessSystem.RunOnGameThread(() => HarnessSystem.SelectSlot(request));
 
                 default:
                     return new JObject { ["ok"] = false, ["error"] = $"unknown cmd '{cmd}'" };

@@ -151,3 +151,36 @@ death to confirm end to end.
 - This whole policy is a placeholder to prove the loop, not a real
   behavior spec — Phase 4 replaces it with the actual encoder/decoder
   around the fly brain.
+
+## Goal 2 (Moon Lord) additions
+
+Added for the Moon Lord harness (`training/moonlord/`). None of this has
+been compiled or run live yet.
+
+**`set_action`** also takes `up` and `down` (wings, flying mounts,
+platforms) and an optional `aim_x`/`aim_y` (world pixels). The aim moves
+the cursor after input is read, so item use (the whip) swings that way;
+it assumes zoom 1×. Omitted keys are released. Actions are now applied from
+both `ProcessTriggers` and `SetControls`.
+
+**`get_state`** adds:
+- `player`: `cx`/`cy` (centre), `vx`/`vy`, `width`/`height`, `wing_time`/`wing_time_max`, `mount_active`, `immune`, `minions`/`max_minions`, `selected_item`.
+- `npcs`: bosses and every Moon Lord part are always included, whatever the distance. Each NPC adds `cx`/`cy`, `vx`/`vy`, `width`/`height`, `max_hp`, `boss`, `moon_lord_part`, `dont_take_damage`. `x`/`y` are still the top-left corner.
+- `projectiles`: hostile projectiles within 1600px, each with `type`, `cx`/`cy`, `vx`/`vy`, `width`/`height`, `damage`. For the deathray (type 455), `vx`/`vy` is the beam direction.
+- `episode`: `ticks`/`seconds` since the last reset, `hits`, `damage_taken`, `deaths`, `boss_killed`, `boss_kill_tick`, `keep_focus`, `arena`.
+
+**New commands.** All except the first two run on the game thread. Each
+one waits up to 3 s, then returns `{"ok": false, "error": "game thread did not run..."}`.
+
+| Command | Effect |
+| --- | --- |
+| `get_episode` | The `episode` block on its own |
+| `set_keep_focus {enabled}` | While connected, force `Main.hasFocus = true` after input handling, so held keys apply with the window in the background (untested) |
+| `set_arena {x?, y?}` | Where `reset_episode` puts the player; defaults to the current position |
+| `reset_episode` | Despawn hostile NPCs and projectiles, heal, clear debuffs, move to the arena, release keys, zero counters. Refused while dead |
+| `spawn_npc {type?}` | `NPC.SpawnOnPlayer`; default 398 (Moon Lord core) |
+| `spawn_projectile {type?, x?/y? or dx?/dy?, vx, vy, damage?, knockback?}` | Hostile projectile for the dodge gym; default type 462 (Phantasmal Bolt) |
+| `select_slot {slot}` | Select hotbar slot 0–9 (to cast summon staffs) |
+| `equip_loadout {armor, accessories, hotbar, inventory, max_stats}` | Put items on the loaded character. Each item is an internal name (`ItemID.Search`), a numeric id, or a list of alternatives; `max_stats` consumes every Life Crystal, Life Fruit and Mana Crystal and turns on the Demon Heart slot. Unknown names come back in `unknown_items` |
+| `apply_buffs {names, seconds}` | `AddBuff` by `BuffID` name. Unknown names come back in `unknown_buffs` |
+| `build_arena {x?, y?, half_width_tiles, rows, row_spacing_tiles, furniture_spacing_tiles, floor_item, campfire_item, lantern_item, hanger_block_item, replace_platforms}` | Planter-box rows centred on `x`/`y` (default: the player), campfires on the lowest row, heart lanterns hanging from a block set into the second row; wooden platforms in the rows are replaced. Uses each item's own `createTile`/`placeStyle`. Reports every campfire and lantern, then marks the arena |

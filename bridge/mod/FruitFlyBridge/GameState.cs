@@ -1,5 +1,6 @@
 using Newtonsoft.Json.Linq;
 using Terraria;
+using Terraria.ID;
 
 namespace FruitFlyBridge
 {
@@ -18,6 +19,8 @@ namespace FruitFlyBridge
         private const int TileHalfWidth = 15;
         private const int TileHalfHeight = 8;
 
+        // Player centre is included too (Goal 2), since projectile and boss
+        // positions below are centres.
         public static JObject BuildSnapshot()
         {
             if (Main.gameMenu || Main.LocalPlayer == null)
@@ -49,9 +52,11 @@ namespace FruitFlyBridge
                 {
                     ["x"] = player.position.X,
                     ["y"] = player.position.Y,
+                    ["cx"] = player.Center.X,
+                    ["cy"] = player.Center.Y,
                     ["direction"] = player.direction,
                     ["hp"] = player.statLife,
-                    ["max_hp"] = player.statLifeMax,
+                    ["max_hp"] = player.statLifeMax2, // with buffs/accessories (was statLifeMax)
                     ["mana"] = player.statMana,
                     ["max_mana"] = player.statManaMax,
                     ["on_ground"] = player.velocity.Y == 0f,
@@ -62,7 +67,21 @@ namespace FruitFlyBridge
                     // a zombie swarm and the bot kept acting on the corpse.
                     ["dead"] = player.dead,
                     ["ghost"] = player.ghost,
+                    // Goal 2 (Moon Lord): motion, flight and summoner state.
+                    ["vx"] = player.velocity.X,
+                    ["vy"] = player.velocity.Y,
+                    ["width"] = player.width,
+                    ["height"] = player.height,
+                    ["wing_time"] = player.wingTime,
+                    ["wing_time_max"] = player.wingTimeMax,
+                    ["mount_active"] = player.mount != null && player.mount.Active,
+                    ["immune"] = player.immune,
+                    ["minions"] = player.numMinions,
+                    ["max_minions"] = player.maxMinions,
+                    ["selected_item"] = player.selectedItem,
                 },
+                ["projectiles"] = BuildHostileProjectileArray(player),
+                ["episode"] = Episode.ToJson(),
                 ["npcs"] = BuildNpcArray(player),
                 ["players"] = BuildOtherPlayersArray(player),
                 ["tiles"] = BuildTileGrid(player),
@@ -82,6 +101,8 @@ namespace FruitFlyBridge
                 ["debug"] = new JObject
                 {
                     ["has_focus"] = Main.hasFocus,
+                    ["game_is_active"] = Main.instance?.IsActive ?? false,
+                    ["game_paused"] = Main.gamePaused,
                     ["control_left"] = player.controlLeft,
                     ["control_right"] = player.controlRight,
                     ["velocity_x"] = player.velocity.X,
@@ -90,6 +111,18 @@ namespace FruitFlyBridge
                     ["frozen"] = player.frozen,
                     ["stoned"] = player.stoned,
                     ["cc_immune"] = player.CCed,
+                    // Item-use diagnostics (whip assist never swung in the
+                    // first live test; these show which gate blocks it).
+                    ["control_use_item"] = player.controlUseItem,
+                    ["release_use_item"] = player.releaseUseItem,
+                    ["delay_use_item"] = player.delayUseItem,
+                    ["item_animation"] = player.itemAnimation,
+                    ["mouse_interface"] = player.mouseInterface,
+                    ["held_item_type"] = player.HeldItem?.type ?? 0,
+                    ["held_item_name"] = player.HeldItem?.Name ?? "",
+                    ["mouse_world_x"] = Main.MouseWorld.X,
+                    ["mouse_world_y"] = Main.MouseWorld.Y,
+                    ["whip_projectiles"] = CountOwnWhips(player),
                 },
             };
             return result;
@@ -121,6 +154,58 @@ namespace FruitFlyBridge
             return players;
         }
 
+        // Live projectiles owned by the player that are whips (the swing
+        // itself is a projectile) -- direct evidence a swing happened.
+        private static int CountOwnWhips(Player player)
+        {
+            int n = 0;
+            foreach (var proj in Main.projectile)
+            {
+                if (proj != null && proj.active && proj.owner == player.whoAmI && ProjectileID.Sets.IsAWhip[proj.type])
+                {
+                    n++;
+                }
+            }
+            return n;
+        }
+
+        private const int ProjectileRadius = 1600; // pixels (~100 tiles)
+
+        // Goal 2: hostile projectiles (what the fly has to dodge). Centre
+        // position, velocity and hitbox size, so the Python side can work
+        // out where each one is heading and how soon it arrives.
+        private static JArray BuildHostileProjectileArray(Player player)
+        {
+            var list = new JArray();
+            foreach (var proj in Main.projectile)
+            {
+                if (proj == null || !proj.active || !proj.hostile)
+                {
+                    continue;
+                }
+
+                var dx = proj.Center.X - player.Center.X;
+                var dy = proj.Center.Y - player.Center.Y;
+                if (dx * dx + dy * dy > ProjectileRadius * ProjectileRadius)
+                {
+                    continue;
+                }
+
+                list.Add(new JObject
+                {
+                    ["type"] = proj.type,
+                    ["cx"] = proj.Center.X,
+                    ["cy"] = proj.Center.Y,
+                    ["vx"] = proj.velocity.X,
+                    ["vy"] = proj.velocity.Y,
+                    ["width"] = proj.width,
+                    ["height"] = proj.height,
+                    ["damage"] = proj.damage,
+                });
+            }
+            return list;
+        }
+
         private static JArray BuildNpcArray(Player player)
         {
             var npcs = new JArray();
@@ -133,7 +218,10 @@ namespace FruitFlyBridge
 
                 var dx = npc.position.X - player.position.X;
                 var dy = npc.position.Y - player.position.Y;
-                if (dx * dx + dy * dy > NpcRadius * NpcRadius)
+                // Bosses (and every Moon Lord part) are always reported:
+                // the Moon Lord is far bigger than the 800px radius.
+                bool always = npc.boss || Episode.IsMoonLordPart(npc.type);
+                if (!always && dx * dx + dy * dy > NpcRadius * NpcRadius)
                 {
                     continue;
                 }
@@ -146,6 +234,18 @@ namespace FruitFlyBridge
                     ["y"] = npc.position.Y,
                     ["hp"] = npc.life,
                     ["hostile"] = npc.friendly ? false : true,
+                    // Goal 2 additions. x/y above stay the top-left corner
+                    // (unchanged for the existing encoder); cx/cy = centre.
+                    ["cx"] = npc.Center.X,
+                    ["cy"] = npc.Center.Y,
+                    ["vx"] = npc.velocity.X,
+                    ["vy"] = npc.velocity.Y,
+                    ["width"] = npc.width,
+                    ["height"] = npc.height,
+                    ["max_hp"] = npc.lifeMax,
+                    ["boss"] = npc.boss,
+                    ["moon_lord_part"] = Episode.IsMoonLordPart(npc.type),
+                    ["dont_take_damage"] = npc.dontTakeDamage,
                 });
             }
             return npcs;

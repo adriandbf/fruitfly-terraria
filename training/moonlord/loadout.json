@@ -1,0 +1,93 @@
+{
+  "_comment": "Pre-Moon Lord summoner for tModLoader (Terraria 1.4.4 content; tModLoader has no 1.4.5 port yet, so 1.4.5 items/changes don't apply). Applied by `harness.py --setup-character` (mod command equip_loadout). Each item is an internal ItemID name, a numeric item id, or a list of alternatives tried in order; ids are from terraria.wiki.gg. Accessory order is priority: 5 usable in a Normal world, 6 in Expert (Demon Heart slot), 7 in Master. Terraprisma (slot 1) is the summon cast at setup (user's choice, 2026-10-08); the Stardust Dragon Staff stays in slot 0 as a spare.",
+  "armor": [
+    [
+      "HallowedHood",
+      4873
+    ],
+    [
+      "HallowedPlateMail",
+      551
+    ],
+    [
+      "HallowedGreaves",
+      552
+    ]
+  ],
+  "accessories": [
+    [
+      "RainbowWings",
+      4823
+    ],
+    "EmpressFlightBooster",
+    "PapyrusScarab",
+    "NecromanticScroll",
+    "PygmyNecklace",
+    "AnkhShield",
+    "WormScarf"
+  ],
+  "hotbar": [
+    "StardustDragonStaff",
+    "EmpressBlade",
+    [
+      "RainbowWhip",
+      4914
+    ],
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    "SuperHealingPotion"
+  ],
+  "inventory": [
+    {
+      "name": "SuperHealingPotion",
+      "stack": 30
+    }
+  ],
+  "max_stats": true,
+  "summon_slots": [
+    1
+  ],
+  "whip_slot": 2,
+  "whip_assist": true,
+  "buffs": [
+    "Summoning",
+    "Bewitched",
+    "Endurance",
+    "Ironskin",
+    "Regeneration",
+    "Lifeforce",
+    "Wrath",
+    "Heartreach",
+    "Swiftness",
+    "WellFed3"
+  ],
+  "buff_seconds": 900,
+  "arena": {
+    "half_width_tiles": 400,
+    "rows": 16,
+    "row_spacing_tiles": 12,
+    "furniture_spacing_tiles": 60,
+    "floor_item": [
+      "DayBloomPlanterBox",
+      3215
+    ],
+    "campfire_item": [
+      "Campfire",
+      966
+    ],
+    "lantern_item": [
+      "HeartLantern",
+      1859
+    ],
+    "hanger_block_item": [
+      "GrayBrick",
+      129
+    ],
+    "replace_platforms": true,
+    "furniture_row_every": 5
+  }
+}
