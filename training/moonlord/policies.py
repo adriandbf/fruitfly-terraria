@@ -19,6 +19,9 @@ import random
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import movement  # noqa: E402
+
 KEYS = ("left", "right", "jump", "use", "up", "down")
 RELEASE = {k: False for k in KEYS}
 
@@ -56,65 +59,58 @@ class RandomPolicy:
     def act(self, state):
         if self.hold <= 0:
             h = self.rng.choice((-1, 0, 1))
-            v = self.rng.choice(("up", None, "down"))
-            self.current = {**RELEASE, "left": h < 0, "right": h > 0,
-                            "jump": v == "up", "up": v == "up", "down": v == "down"}
+            self.current = {**RELEASE, **movement.keys_for(h, self.rng.choice(movement.MODES))}
             self.hold = self.rng.randint(1, 8)
         self.hold -= 1
         return dict(self.current), _sources(self.current, "random")
 
 
 class ScriptedDodger:
-    """Hand-written dodger, the 'ceiling' baseline. Each tick it tries the 9
-    combinations of (left / none / right) x (ascend / none / descend),
-    rolls each one forward HORIZON ticks with simple kinematics, moves every
-    projectile in a straight line (the deathray as a fixed beam), and picks
-    the cheapest: projectile overlap (weighted by damage), getting close to
-    the boss's core, and straying from the arena centre.
-
-    The kinematics constants match fake_bridge.DEFAULT_CONFIG; they are a
-    guess for the real game and should be refit from live logs."""
+    """Hand-written dodger, the 'ceiling' baseline. Each tick it tries the 12
+    combinations of (left / none / right) x (fast climb / climb / glide / dive),
+    rolls each forward HORIZON ticks with the probe-fitted movement model
+    (movement.py), moves every projectile in a straight line (homing eyes
+    steered, the deathray swept at its measured rate), and picks the
+    cheapest. Costs: projectile overlap (by damage), touching any Moon Lord
+    part, leaving a ring around the core (so it circles the boss instead of
+    standing inside it -- live, idle/fly sat ~140 px from the core), leaving
+    the arena, a climb that would coast past the arena top, and standing
+    still horizontally."""
     name = "scripted"
 
     HORIZON = 36   # ticks (0.6 s) of lookahead
     STEP = 3       # ticks per lookahead sample
     MARGIN = 14.0  # px of extra clearance wanted around each projectile
 
-    def __init__(self, run_speed=6.0, wing_ascent=5.0, gravity=0.4, max_fall=10.0,
-                 boss_keep_away=350.0, arena_half_width=1300.0, arena_height=2900.0, beam_width=40.0):
-        self.run_speed, self.wing_ascent = run_speed, wing_ascent
-        self.gravity, self.max_fall = gravity, max_fall
-        self.boss_keep_away, self.arena_half_width = boss_keep_away, arena_half_width
-        self.arena_height = arena_height
+    # ring/keep-away tuned offline on the recalibrated fake (2026-10-09, 10 seeds):
+    # (350, 700) px / 150 px gave median 109 s vs 43 s for the old (450, 900) / 250;
+    # it also matches the human demos (~340-455 px from the core).
+    def __init__(self, boss_keep_away=150.0, ring=(350.0, 700.0), arena_half_width=1300.0,
+                 arena_height=2900.0, beam_width=40.0):
+        self.boss_keep_away, self.ring = boss_keep_away, ring
+        self.arena_half_width, self.arena_height = arena_half_width, arena_height
         self.beam_width = beam_width
         self.reset()
 
     def reset(self):
-        self.prev = (0, None)
+        self.prev = (0, "down")
         self.home = self.floor = None
         self.ray_prev = None  # last seen deathray angle, to estimate its sweep rate
 
-    def _rollout(self, p, h, v):
+    def _rollout(self, p, h, mode):
         x, y = p["cx"], p["cy"]
         vx, vy = p.get("vx", 0.0), p.get("vy", 0.0)
-        wing = p.get("wing_time", 0) or 0
-        infinite = p.get("mount_active", False)
+        ground = bool(p.get("on_ground"))
         pts = []
         for t in range(1, self.HORIZON + 1):
-            vx += max(-0.6, min(0.6, h * self.run_speed - vx))
-            if v == "up" and (wing > 0 or infinite):
-                vy = max(-self.wing_ascent, vy - 1.0)
-                wing -= 1
-            elif infinite:
-                vy += max(-0.5, min(0.5, (self.wing_ascent if v == "down" else 0.0) - vy))
-            else:
-                vy = min(self.max_fall, vy + self.gravity * (2.0 if v == "down" else 1.0))
+            vx, vy = movement.step(vx, vy, h, mode, ground)
+            ground = False
             x += vx
             y += vy
-            if p.get("on_ground") and y > p["cy"] and v != "up":
-                y, vy = p["cy"], 0.0  # can't fall through the floor we're standing on
+            if y > self.floor - 21:  # arena floor (planter rows are passable; the bottom row isn't)
+                y, vy = self.floor - 21, 0.0
             pts.append((t, x, y))
-        return pts
+        return pts, vy
 
     def _eye_paths(self, eyes, pts, turn=0.03):
         """Turn-limited homing eyes steered at the rolled-out player, per tick."""
@@ -139,17 +135,15 @@ class ScriptedDodger:
         if not state.get("in_world") or p.get("dead") or "cx" not in p:
             return dict(RELEASE), {}
         projs = state.get("projectiles", [])
-        boss = next((n for n in state.get("npcs", []) if n.get("boss") or n.get("moon_lord_part")), None)
         hw, hh = (p.get("width") or 20) / 2, (p.get("height") or 42) / 2
-        # Stay near the arena mark; with no mark, near where the episode began.
         arena = (state.get("episode") or {}).get("arena")
         if self.home is None:
             self.home = arena["x"] + hw if arena else p["cx"]
-            # Arena floor = the mark's feet; its top is arena_height above.
             self.floor = (arena["y"] + 2 * hh) if arena else p["cy"] + hh
+        top = self.floor - self.arena_height
+        bosses = [n for n in state.get("npcs", []) if n.get("boss") or n.get("moon_lord_part")]
+        core = next((n for n in bosses if n.get("type") == 398), None)
 
-        # The deathray sweeps; estimate its angular speed (rad/tick) from the
-        # angle seen last tick (10 Hz = 6 game ticks apart).
         ray_omega = 0.0
         ray = next((pr for pr in projs if pr["type"] == PHANTASMAL_DEATHRAY), None)
         if ray is not None:
@@ -162,10 +156,10 @@ class ScriptedDodger:
 
         best, best_cost = None, None
         for h in (-1, 0, 1):
-            for v in ("up", None, "down"):
-                cost = 0.0
-                pts = self._rollout(p, h, v)
+            for mode in movement.MODES:
+                pts, vy_end = self._rollout(p, h, mode)
                 eyes = self._eye_paths([pr for pr in projs if pr["type"] == PHANTASMAL_EYE], pts)
+                cost = 0.0
                 for t, x, y in pts[self.STEP - 1::self.STEP]:
                     w = 1.0 - 0.5 * t / self.HORIZON  # sooner threats matter more
                     for pr, path in eyes:
@@ -182,10 +176,9 @@ class ScriptedDodger:
                         if pr["type"] == PHANTASMAL_DEATHRAY:
                             a_t = math.atan2(pr["vy"], pr["vx"]) + ray_omega * t
                             ux, uy = math.cos(a_t), math.sin(a_t)
-                            n = 1.0
                             rx, ry = x - pr["cx"], y - pr["cy"]
-                            along = (rx * ux + ry * uy) / n
-                            perp = abs(-rx * uy + ry * ux) / n
+                            along = rx * ux + ry * uy
+                            perp = abs(-rx * uy + ry * ux)
                             if along > 0:
                                 gap = perp - (self.beam_width / 2 + hw + self.MARGIN)
                                 if gap < 0:
@@ -197,45 +190,67 @@ class ScriptedDodger:
                         gy = abs(qy - y) - (hh + r + self.MARGIN)
                         if gx < 0 and gy < 0:
                             cost += w * dmg * (1 + min(-gx, -gy) / 20.0)
-                    if boss:
+                    for boss in bosses:
                         d = math.hypot(x - boss.get("cx", boss["x"]), y - boss.get("cy", boss["y"]))
                         if d < self.boss_keep_away:
                             cost += w * 2.0 * (self.boss_keep_away - d)
+                    if core is not None:
+                        d = math.hypot(x - core["cx"], y - core["cy"])
+                        lo, hi = self.ring
+                        if d < lo:
+                            cost += w * 0.3 * (lo - d)
+                        elif d > hi:
+                            cost += w * 0.1 * (d - hi)
                     off = abs(x - self.home) - self.arena_half_width
                     if off > 0:
                         cost += w * off
-                    above = (self.floor - self.arena_height) - y  # >0 once above the arena's top row
+                    above = top - y
                     if above > 0:
                         cost += w * above
-                cost += 0.5 * (v == "up")                 # save wing time
-                cost += 0.2 * ((h, v) != self.prev)       # mild preference not to dither
+                # A climb keeps coasting long after letting go: charge where it would end up.
+                apex = pts[-1][2] - movement.coast_rise(vy_end)
+                if apex < top:
+                    cost += 2.0 * (top - apex)
+                cost += 1.0 * (h == 0)                     # keep moving sideways (the human demos almost never stop)
+                cost += 0.2 * ((h, mode) != self.prev)     # mild preference not to dither
                 if best_cost is None or cost < best_cost:
-                    best, best_cost = (h, v), cost
+                    best, best_cost = (h, mode), cost
         self.prev = best
-        h, v = best
-        action = {**RELEASE, "left": h < 0, "right": h > 0,
-                  "jump": v == "up", "up": v == "up", "down": v == "down"}
+        action = {**RELEASE, **movement.keys_for(*best)}
         return action, _sources(action, "script")
 
 
 class FlyPolicy:
-    """The fly: encoder -> FastBrain -> decoder, exactly the run_fly.py
-    pipeline. Stage M0/M2 adapter: hostile PROJECTILES that are closing in
-    are presented to the encoder as hostile 'NPCs', so the existing
-    looming (LC4) channel sees them. That adapter is a hand-written choice
-    and is logged as such; the real M2 work replaces it with a proper
-    projectile encoding (visual-field position + approach speed).
+    """The fly: encoder -> FastBrain -> decoder, the run_fly.py pipeline, plus
+    two hand-written Moon Lord layers (logged, and credited separately):
 
-    Not driven by the brain yet: up/down (no vertical readout found; stage
-    M3) and `use` (minions attack on their own; holding use would just
-    re-cast the summon staff). Both are held False and NOT credited.
+    1. ATTENTION (sensory side): the encoder reacts to the single NEAREST
+       hostile, which in this fight is almost always the boss's core sitting
+       ~130 px under the player (live 2026-10-09), so incoming projectiles
+       barely registered. Instead the fly is shown the single MOST URGENT
+       threat: the projectile or Moon Lord part (core, hands, head, True
+       Eyes) with the shortest time to contact. It still reaches the brain
+       only through the looming (LC4) channel; the brain decides the rest.
 
-    brain/encoder/decoder can be injected for tests; by default the brain is
+    2. FLEE BY FLYING (motor side): flying sideways is >2x faster than
+       running (probe: ~8 vs 3.5 px/tick). While the decoder's flee reflex is
+       active and has a direction from the brain, this layer keeps the fly
+       airborne in the sawtooth the human demos use: hold jump (climb) until
+       rising fast, then dive (down) until falling fast, repeat. Left/right
+       still come from the brain (DNa02); jump/down here come from the rule
+       and are credited "rule", not "brain". Outside a flee nothing changes.
+
+    Not driven by the brain: up (fast climb) and `use` (the whip assist).
+
+    brain/readout_fn can be injected for tests; by default the brain is
     built on first use (needs the Mac's venv and connectome data)."""
     name = "fly"
 
+    CLIMB_UNTIL_VY = -9.0   # px/tick: climbing this fast -> start the dive
+    DIVE_UNTIL_VY = 6.0     # px/tick: falling this fast -> climb again
+
     def __init__(self, enc_params=None, dec_params=None, brain=None, readout_fn=None,
-                 threat_horizon_ticks=90):
+                 threat_horizon_ticks=90, fly_flee=True):
         root = Path(__file__).resolve().parents[2]
         for sub in ("brain", "interface"):
             if str(root / sub) not in sys.path:
@@ -246,8 +261,11 @@ class FlyPolicy:
         self.enc_params, self.dec_params = enc_params, dec_params
         self.brain, self.readout_fn = brain, readout_fn
         self.threat_horizon = threat_horizon_ticks
+        self.fly_flee = fly_flee
         self.flee = decoder.StatefulDecoder(dec_params)
         self.last_drives = None
+        self.last_threat = None
+        self._diving = False
 
     def _ensure_brain(self):
         if self.brain is None:
@@ -261,14 +279,22 @@ class FlyPolicy:
 
     def reset(self):
         self.flee.reset()
+        self._diving = False
         if self.brain is not None and hasattr(self.brain, "reset_state"):
             self.brain.reset_state()
 
     def threats_as_npcs(self, state):
         """Closing hostile projectiles (arriving within threat_horizon
         ticks) as pseudo-NPC dicts the existing encoder understands."""
+        return [t for t, _ in self._threats(state) if t.get("from_projectile") is not None]
+
+    def _threats(self, state):
+        """(pseudo-NPC, ticks to contact) for every closing projectile and
+        every Moon Lord part. Parts count even when not closing: the boss
+        chases at the fly's own speed, so being close is the danger."""
         p = state.get("player") or {}
         pcx, pcy = p.get("cx", p.get("x", 0.0)), p.get("cy", p.get("y", 0.0))
+        pvx, pvy = p.get("vx", 0.0), p.get("vy", 0.0)
         out = []
         for pr in state.get("projectiles", []):
             rx, ry = pcx - pr["cx"], pcy - pr["cy"]
@@ -276,21 +302,36 @@ class FlyPolicy:
             if pr["type"] == PHANTASMAL_DEATHRAY:
                 closing = 1.0  # a beam is "arriving" everywhere along it
             else:
-                closing = (pr["vx"] * rx + pr["vy"] * ry) / dist  # px/tick toward the player
+                closing = ((pr["vx"] - pvx) * rx + (pr["vy"] - pvy) * ry) / dist
             if closing <= 0:
                 continue
-            if pr["type"] != PHANTASMAL_DEATHRAY and dist / closing > self.threat_horizon:
+            ttc = dist / closing
+            if pr["type"] != PHANTASMAL_DEATHRAY and ttc > self.threat_horizon:
                 continue
-            out.append({"x": pr["cx"], "y": pr["cy"], "hostile": True, "from_projectile": pr["type"]})
+            out.append(({"x": pr["cx"], "y": pr["cy"], "hostile": True, "from_projectile": pr["type"]}, ttc))
+        for n in state.get("npcs", []):
+            if not (n.get("moon_lord_part") or n.get("type") == 400):
+                continue
+            cx, cy = n.get("cx", n["x"]), n.get("cy", n["y"])
+            rx, ry = pcx - cx, pcy - cy
+            dist = max(1.0, math.hypot(rx, ry) - 40.0)
+            closing = max(1.0, ((n.get("vx", 0.0) - pvx) * rx + (n.get("vy", 0.0) - pvy) * ry) / (math.hypot(rx, ry) or 1.0))
+            out.append(({"x": cx, "y": cy, "hostile": True, "from_npc": n.get("type")}, dist / closing))
         return out
+
+    def most_urgent(self, state):
+        threats = self._threats(state)
+        return min(threats, key=lambda t: t[1])[0] if threats else None
 
     def act(self, state):
         p = state.get("player") or {}
         if not state.get("in_world") or p.get("dead"):
             return dict(RELEASE), {}
         self._ensure_brain()
+        threat = self.most_urgent(state)
+        self.last_threat = threat
         seen = dict(state)
-        seen["npcs"] = list(state.get("npcs", [])) + self.threats_as_npcs(state)
+        seen["npcs"] = [threat] if threat else []   # attention: one threat, the most urgent
         self.last_drives = self.encoder.compute_drives(seen, self.enc_params)
         ids, rates = self.encoder.encode(seen, self.enc_params)
         spikes = self.brain.stimulate(ids, rates, duration_ms=100)
@@ -298,7 +339,40 @@ class FlyPolicy:
         a = self.flee.decode(readout, p.get("direction", 1))
         action = {**RELEASE, "left": bool(a.get("left")), "right": bool(a.get("right")),
                   "jump": bool(a.get("jump"))}
-        return action, _sources(action, "brain")
+        sources = _sources(action, "brain")
+
+        fleeing = self.flee.last_mode == "flee" and self.flee.last_flee_dir != 0
+        if self.fly_flee and fleeing:
+            vy = p.get("vy", 0.0)
+            if self._diving and vy >= self.DIVE_UNTIL_VY:
+                self._diving = False
+            elif not self._diving and vy <= self.CLIMB_UNTIL_VY:
+                self._diving = True
+            action["jump"], action["down"] = (False, True) if self._diving else (True, False)
+            sources = {k: v for k, v in sources.items() if k in ("left", "right")}
+            sources["down" if self._diving else "jump"] = "rule"
+        else:
+            self._diving = False
+        return action, sources
+
+
+class HumanPolicy:
+    """You, playing. Used with the mod's passthrough mode: the harness sends
+    no movement, your keyboard drives the character, and this reads back the
+    controls you actually held (get_state.debug) so the demo is logged in the
+    same format as every other policy, credited "human"."""
+    name = "human"
+    passthrough = True
+
+    def reset(self):
+        pass
+
+    def act(self, state):
+        d = state.get("debug") or {}
+        action = {**RELEASE, "left": bool(d.get("control_left")), "right": bool(d.get("control_right")),
+                  "jump": bool(d.get("control_jump")), "up": bool(d.get("control_up")),
+                  "down": bool(d.get("control_down")), "use": bool(d.get("control_use_item"))}
+        return action, _sources(action, "human")
 
 
 def make_policy(name, seed=0, **kw):
@@ -310,4 +384,6 @@ def make_policy(name, seed=0, **kw):
         return ScriptedDodger(**kw)
     if name == "fly":
         return FlyPolicy(**kw)
+    if name == "human":
+        return HumanPolicy()
     raise ValueError(f"unknown policy '{name}'")
