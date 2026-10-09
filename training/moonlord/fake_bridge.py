@@ -19,8 +19,10 @@ buffs, and real minion targeting.
 Time only moves on set_action: each call advances SUBSTEPS game ticks
 (6 ticks = one 10 Hz decision), so episodes run as fast as Python can go.
 """
+import json
 import math
 import random
+from pathlib import Path
 
 import movement
 
@@ -52,9 +54,9 @@ DEFAULT_CONFIG = {
     "seed": 0,
     "arena_half_width": 6400.0,   # walls this far either side of the start x (= the 400-tile arena)
     "floor_y": 0.0,               # world y of the floor (y grows downward)
-    "ceiling_px": 4000.0,         # world top this far above the floor (beyond the 3072 px arena)
-    "player_hp": 500,
-    "regen_per_s": 10.0,
+    "ceiling_px": 4000.0,         # world top this far above the floor (large world: normal gravity ends ~3900 px up)
+    "player_hp": 600,                # 500 + Lifeforce 20% (live max_hp 600)
+    "regen_per_s": 3.5,              # live 2026-10-09: ~3.5 HP/s between hits (was 10)
     "player_w": 20, "player_h": 42,
     "wing_time_max": 150,         # measured; movement itself comes from movement.py (probe-fitted)
     "infinite_flight": False,     # flying mount: up/down steer, never runs out
@@ -71,21 +73,41 @@ DEFAULT_CONFIG = {
     # hittable part, like summon targeting in the game.
     "part_hp": {"head": 67500, "hand_l": 37500, "hand_r": 37500, "core": 75000},
     "true_eye_period": 100, "true_eye_shots": 3,   # homing Phantasmal Eyes per volley, per True Eye
-    "minion_dps": 1658.0,         # measured, no whip
+    "minion_dps": 1658.0,         # measured, no whip (Hallowed gear; used only when dps_near is None)
+    # v2 (2026-10-09 evening, 70 small-world + 15 large-world live fights, Spooky
+    # gear): boss damage falls off with the player's distance from the core
+    # (whip reach / minion travel): idle ~3500 HP/s at ~130 px, scripted ~2900
+    # at ~400 px, human ~2200 at ~660 px. Total minion+whip DPS = dps_near -
+    # dps_per_px * distance, floored at dps_min; None = the old flat model.
+    "dps_near": 3700.0, "dps_per_px": 2.2, "dps_min": 800.0,
     # Live 2026-10-09 (random/scripted/human fights): the boss CHASES -- its core
     # moves ~8 px/tick (as fast as the player flies) and sits ~130 px BELOW
     # the player; the head is ~400 px above the core, hands ~400 px to each side.
     "boss_height": -130.0,        # core this far above the player (negative = below)
-    "boss_drift": 8.0,            # px/tick max chase speed of the core
-    "contact_radius": 45.0, "contact_damage": 80,   # core/hand hitboxes are 46x66 px (live); contact is a top hit source
+    "boss_drift": 8.0,            # px/tick chase speed of the core: a VECTOR speed (live: |v| ~7.9 in every
+                                  # direction), not 8 per axis -- the old per-axis clamp made the boss 11 px/tick
+                                  # on diagonals, so climbing/diving away never paid off offline
+    # Hands (live, 25k samples): ~120 px above the core; the hand on the
+    # player's side pulls IN to ~330 px from the core once the player is past
+    # ~150 px on that side, and the far hand swings OUT to ~700 px.
+    "hand_dy": -120.0, "hand_in": 330.0, "hand_out": 700.0, "hand_speed": 12.0,
+    "contact_radius": 45.0, "contact_damage": 100,   # core/hand hitboxes are 46x66 px (live); contact is a top hit source
     # Attacks
-    "bolt_period": 330, "bolt_damage": 71, "bolt_speed": 8.0, "bolt_count": 3,
-    "sphere_period": 280, "sphere_damage": 126, "sphere_speed": 10.0, "sphere_count": 6,
-    "eye_period": 190, "eye_damage": 66, "eye_speed": 9.0, "eye_turn": 0.03, "eye_life": 240,
-    "ray_period": 900, "ray_first": 1020, "ray_damage": 78, "ray_sweep": 1.4,
+    "bolt_period": 330, "bolt_damage": 90, "bolt_speed": 8.0, "bolt_count": 3,
+    "sphere_period": 280, "sphere_damage": 140, "sphere_speed": 10.0, "sphere_count": 6,
+    "eye_period": 190, "eye_damage": 85, "eye_speed": 9.0, "eye_turn": 0.03, "eye_life": 240,
+    # v2 aim model (fitted to live hit rates by calibrate_fake.py / fit_fake.py)
+    "bolt_lead": 0.0, "bolt_spread": 0.12, "bolt_life": 600,
+    "sphere_lead": 0.0, "sphere_spread": 0.35, "sphere_life": 600,
+    "ray_period": 900, "ray_first": 1020, "ray_damage": 100, "ray_sweep": 1.4,
     "ray_duration": 120, "ray_width": 40.0, "ray_length": 2400.0,
     "boss_attacks": True,
 }
+
+# Attack knobs fitted to live fights by fit_fake.py, if present (overrides
+# the defaults above; explicit config still wins).
+_FIT_PATH = Path(__file__).resolve().parent / "fake_fit.json"
+FITTED = json.loads(_FIT_PATH.read_text())["config"] if _FIT_PATH.exists() else {}
 
 SIZES = {PHANTASMAL_BOLT: 8, PHANTASMAL_SPHERE: 40, PHANTASMAL_EYE: 14, PHANTASMAL_DEATHRAY: 36}  # measured hitboxes
 DEFAULT_DAMAGE = {PHANTASMAL_BOLT: 71, PHANTASMAL_SPHERE: 126, PHANTASMAL_EYE: 66, PHANTASMAL_DEATHRAY: 78}
@@ -105,7 +127,7 @@ class FakeMoonLordBridge:
     simulated = True
 
     def __init__(self, config=None):
-        self.cfg = {**DEFAULT_CONFIG, **(config or {})}
+        self.cfg = {**DEFAULT_CONFIG, **FITTED, **(config or {})}
         self.rng = random.Random(self.cfg["seed"])
         c = self.cfg
         self.spawn_x, self.floor = 0.0, c["floor_y"]
@@ -117,7 +139,7 @@ class FakeMoonLordBridge:
         self.selected = 0
         self.hotbar = {0: "StardustDragonStaff", 1: "EmpressBlade", 2: "RainbowWhip"}
         self.whip_bonus = 1.25  # assumed minion DPS multiplier while the whip keeps tagging
-        self.max_minions = 9  # measured with the Hallowed loadout + buffs
+        self.max_minions = 10  # measured: 9 with Hallowed, 10 with Spooky (live 2026-10-09)
         self.minions = 0
         self._summon_hold = 0
         self.px, self.py = self.spawn_x, self.floor - c["player_h"]  # top-left
@@ -219,7 +241,8 @@ class FakeMoonLordBridge:
         if t != MOON_LORD_CORE:
             return {"ok": False, "error": "fake bridge only models the Moon Lord"}
         cx = self.px + self.cfg["player_w"] / 2
-        self.boss = {"cx": cx, "cy": self.py - self.cfg["boss_height"], "ray": None,
+        self.boss = {"cx": cx, "cy": self.py - self.cfg["boss_height"], "ray": None, "vx": 0.0, "vy": 0.0,
+                     "hand_dx": {"hand_l": -self.cfg["hand_out"], "hand_r": self.cfg["hand_out"]},
                      "parts": dict(self.cfg["part_hp"]), "destroyed": []}
         return {"ok": True, "type": t}
 
@@ -250,15 +273,15 @@ class FakeMoonLordBridge:
         npcs = []
         if self.boss:
             b = self.boss
-            for name, (dx, dy) in PART_OFFSET.items():
+            for name, (dx, dy) in self._offsets().items():
                 dead = name in b["destroyed"]
                 hp = c["part_hp"][name] if dead else b["parts"][name]  # like the game: a destroyed eye reads full hp
                 npcs.append({"type": PART_TYPE[name], "name": name, "x": b["cx"] + dx - 23, "y": b["cy"] + dy - 33,
-                             "cx": b["cx"] + dx, "cy": b["cy"] + dy, "vx": 0.0, "vy": 0.0, "width": 46, "height": 66,
+                             "cx": b["cx"] + dx, "cy": b["cy"] + dy, "vx": b["vx"], "vy": b["vy"], "width": 46, "height": 66,
                              "hp": int(hp), "max_hp": c["part_hp"][name], "hostile": True, "boss": name == "core",
                              "moon_lord_part": True, "dont_take_damage": dead or not self._hittable(name)})
             for name in b["destroyed"]:
-                dx, dy = PART_OFFSET[name]
+                dx, dy = self._offsets()[name]
                 npcs.append({"type": TRUE_EYE, "name": "True Eye of Cthulhu", "x": b["cx"] + dx, "y": b["cy"] + dy - 60,
                              "cx": b["cx"] + dx, "cy": b["cy"] + dy - 60, "vx": 0.0, "vy": 0.0, "width": 30,
                              "height": 30, "hp": 200, "max_hp": 200, "hostile": True, "boss": False,
@@ -360,14 +383,29 @@ class FakeMoonLordBridge:
     def _boss_tick(self):
         c, b = self.cfg, self.boss
         pcx, pcy = self._centre()
-        b["cx"] += max(-c["boss_drift"], min(c["boss_drift"], pcx - b["cx"]))
-        b["cy"] += max(-c["boss_drift"], min(c["boss_drift"], (pcy - c["boss_height"]) - b["cy"]))
+        tx, ty = pcx - b["cx"], (pcy - c["boss_height"]) - b["cy"]
+        d = math.hypot(tx, ty)
+        step = min(c["boss_drift"], d)
+        b["vx"], b["vy"] = (tx / d * step, ty / d * step) if d > 1e-9 else (0.0, 0.0)
+        b["cx"] += b["vx"]
+        b["cy"] += b["vy"]
+        for nm, sign in (("hand_l", -1.0), ("hand_r", 1.0)):
+            side = (pcx - b["cx"]) * sign          # how far the player is out on this hand's side
+            f = min(1.0, max(0.0, (side + 300.0) / 450.0))   # -300 px -> 0 (out), +150 px -> 1 (in)
+            want = sign * (c["hand_out"] + f * (c["hand_in"] - c["hand_out"]))
+            cur = b["hand_dx"][nm]
+            b["hand_dx"][nm] = cur + max(-c["hand_speed"], min(c["hand_speed"], want - cur))
         if self.minions > 0:
             whipping = self.action.get("use") and self._whip_selected()
             whip = self.whip_bonus if whipping else 1.0
             target = self._minion_target(pcx, pcy, self.aim if whipping else None)
             if target:
-                b["parts"][target] -= c["minion_dps"] * whip * self.minions / max(self.max_minions, 1) / TICKS_PER_S
+                if c.get("dps_near") is not None:  # v2: distance-dependent, whip included
+                    dist = math.hypot(pcx - b["cx"], pcy - b["cy"])
+                    dps = max(c["dps_min"], c["dps_near"] - c["dps_per_px"] * dist) * (1.0 if whipping else 1 / 1.25)
+                else:
+                    dps = c["minion_dps"] * whip
+                b["parts"][target] -= dps * self.minions / max(self.max_minions, 1) / TICKS_PER_S
                 if b["parts"][target] <= 0:
                     if target == "core":
                         self.boss, self.boss_killed, self.boss_kill_tick = None, True, self.ticks
@@ -377,30 +415,32 @@ class FakeMoonLordBridge:
                     b["destroyed"].append(target)
         # Contact: core, both hands and the head (live: head contact was a top
         # hit source for the scripted dodger once it kept farther from the core).
-        for bx, by in ((b["cx"], b["cy"]), (b["cx"] - 400.0, b["cy"] - 150.0), (b["cx"] + 400.0, b["cy"] - 150.0),
-                       (b["cx"], b["cy"] - 400.0)):
+        for bx, by in [(b["cx"] + dx, b["cy"] + dy) for dx, dy in self._offsets().values()]:
             if math.hypot(pcx - bx, pcy - by) < c["contact_radius"]:
                 self._hurt(c["contact_damage"])
         if not c["boss_attacks"]:
             return
         t = self.ticks
         head = (b["cx"], b["cy"] - 400.0)
-        hands = ((b["cx"] - 400.0, b["cy"] - 150.0), (b["cx"] + 400.0, b["cy"] - 150.0))
+        off = self._offsets()
+        hands = tuple((b["cx"] + off[n][0], b["cy"] + off[n][1]) for n in ("hand_l", "hand_r"))
         alive_hands, head_alive = hands, True  # destroyed parts keep attacking (see part_hp note)
         for nm in b["destroyed"]:
             if t % c["true_eye_period"] == 0:
-                dx, dy = PART_OFFSET[nm]
+                dx, dy = off[nm]
                 for _ in range(c["true_eye_shots"]):
                     self._aimed(PHANTASMAL_EYE, b["cx"] + dx, b["cy"] + dy - 60, c["eye_speed"], c["eye_damage"],
                                 spread=0.8, homing=c["eye_turn"], life=c["eye_life"])
         if alive_hands and t % c["bolt_period"] == 0:
             hx, hy = self.rng.choice(alive_hands)
             for _ in range(c["bolt_count"]):
-                self._aimed(PHANTASMAL_BOLT, hx, hy, c["bolt_speed"], c["bolt_damage"], spread=0.12)
+                self._aimed(PHANTASMAL_BOLT, hx, hy, c["bolt_speed"], c["bolt_damage"], spread=c["bolt_spread"],
+                            life=c["bolt_life"], lead=c["bolt_lead"])
         if alive_hands and t % c["sphere_period"] == 0:
             hx, hy = self.rng.choice(alive_hands)
             for _ in range(c["sphere_count"]):
-                self._aimed(PHANTASMAL_SPHERE, hx, hy, c["sphere_speed"], c["sphere_damage"], spread=0.35)
+                self._aimed(PHANTASMAL_SPHERE, hx, hy, c["sphere_speed"], c["sphere_damage"], spread=c["sphere_spread"],
+                            life=c["sphere_life"], lead=c["sphere_lead"])
         if head_alive and t % c["eye_period"] == 0:
             for _ in range(3):
                 self._aimed(PHANTASMAL_EYE, head[0] + self.rng.uniform(-200, 200), head[1],
@@ -426,14 +466,31 @@ class FakeMoonLordBridge:
         """Part the minions hit: the hittable part nearest the whip's aim
         point (whip tag), else the hittable part nearest the player."""
         b = self.boss
-        cand = [n for n in PART_OFFSET if self._hittable(n)]
+        off = self._offsets()
+        cand = [n for n in off if self._hittable(n)]
         if not cand:
             return None
         ox, oy = aim if aim else (pcx, pcy)
-        return min(cand, key=lambda n: (b["cx"] + PART_OFFSET[n][0] - ox) ** 2 + (b["cy"] + PART_OFFSET[n][1] - oy) ** 2)
+        return min(cand, key=lambda n: (b["cx"] + off[n][0] - ox) ** 2 + (b["cy"] + off[n][1] - oy) ** 2)
 
-    def _aimed(self, type_, x, y, speed, damage, spread=0.0, homing=0.0, life=600):
+    def _offsets(self):
+        """Each part's offset from the core right now (hands move, see hand_*)."""
+        b, c = self.boss, self.cfg
+        hd = b.get("hand_dx") or {"hand_l": PART_OFFSET["hand_l"][0], "hand_r": PART_OFFSET["hand_r"][0]}
+        return {"hand_l": (hd["hand_l"], c["hand_dy"]), "hand_r": (hd["hand_r"], c["hand_dy"]),
+                "head": PART_OFFSET["head"], "core": PART_OFFSET["core"]}
+
+    def _aimed(self, type_, x, y, speed, damage, spread=0.0, homing=0.0, life=600, lead=0.0):
+        """Fire at the player; lead in [0, 1] blends aiming at where the
+        player is now (0) with where they'll be at impact if they keep their
+        velocity (1)."""
         pcx, pcy = self._centre()
+        if lead:
+            t = math.hypot(pcx - x, pcy - y) / max(speed, 1e-6)
+            for _ in range(2):  # refine the intercept time once
+                fx, fy = pcx + self.vx * t, pcy + self.vy * t
+                t = math.hypot(fx - x, fy - y) / max(speed, 1e-6)
+            pcx, pcy = pcx + lead * self.vx * t, pcy + lead * self.vy * t
         ang = math.atan2(pcy - y, pcx - x) + self.rng.uniform(-spread, spread)
         self.projs.append(_Proj(type_, x, y, speed * math.cos(ang), speed * math.sin(ang), damage,
                                 life=life, homing=homing))
