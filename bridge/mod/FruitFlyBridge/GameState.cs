@@ -79,6 +79,9 @@ namespace FruitFlyBridge
                     ["minions"] = player.numMinions,
                     ["max_minions"] = player.maxMinions,
                     ["selected_item"] = player.selectedItem,
+                    // Healing: potion sickness ticks left, and healing potions carried.
+                    ["potion_delay"] = player.potionDelay,
+                    ["heal_potions"] = CountHealPotions(player),
                 },
                 ["projectiles"] = BuildHostileProjectileArray(player),
                 ["episode"] = Episode.ToJson(),
@@ -105,6 +108,9 @@ namespace FruitFlyBridge
                     ["game_paused"] = Main.gamePaused,
                     ["control_left"] = player.controlLeft,
                     ["control_right"] = player.controlRight,
+                    ["control_jump"] = player.controlJump,
+                    ["control_up"] = player.controlUp,
+                    ["control_down"] = player.controlDown,
                     ["velocity_x"] = player.velocity.X,
                     ["is_operating_another_entity"] = player.isOperatingAnotherEntity,
                     ["mount_active"] = player.mount != null && player.mount.Active,
@@ -164,6 +170,20 @@ namespace FruitFlyBridge
                 if (proj != null && proj.active && proj.owner == player.whoAmI && ProjectileID.Sets.IsAWhip[proj.type])
                 {
                     n++;
+                }
+            }
+            return n;
+        }
+
+        private static int CountHealPotions(Player player)
+        {
+            int n = 0;
+            for (int i = 0; i < 58; i++)
+            {
+                var it = player.inventory[i];
+                if (it != null && it.stack > 0 && it.potion && it.healLife > 0)
+                {
+                    n += it.stack;
                 }
             }
             return n;

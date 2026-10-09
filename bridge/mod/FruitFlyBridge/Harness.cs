@@ -31,6 +31,10 @@ namespace FruitFlyBridge
 
         public static Vector2? ArenaPosition; // where reset_episode puts the player
         public static volatile bool KeepFocus; // see HarnessSystem.PostUpdateInput
+        // Human demo recording: movement keys come from the real keyboard
+        // (the bridge only adds `use` + aim when it holds use, e.g. the whip
+        // assist). get_state.debug reports the human's actual controls.
+        public static volatile bool PassthroughMovement;
 
         public static void Reset()
         {
@@ -54,6 +58,7 @@ namespace FruitFlyBridge
                 ["boss_killed"] = BossKilled,
                 ["boss_kill_tick"] = BossKillTick,
                 ["keep_focus"] = KeepFocus,
+                ["passthrough"] = PassthroughMovement,
                 ["arena"] = ArenaPosition.HasValue
                     ? new JObject { ["x"] = ArenaPosition.Value.X, ["y"] = ArenaPosition.Value.Y }
                     : null,
@@ -298,6 +303,12 @@ namespace FruitFlyBridge
                 moved = true;
             }
 
+            // Gravestones from earlier deaths pile up around the arena: clear
+            // them in a generous box around the arena mark (or the player).
+            var c0 = Episode.ArenaPosition ?? p.position;
+            int tx = (int)(c0.X / 16f), ty = (int)(c0.Y / 16f);
+            int graves = Setup.ClearTombstones(tx - 600, ty - 300, tx + 600, ty + 100);
+
             BridgeSystem.ReleaseAll();
             Episode.Reset();
             return new JObject
@@ -306,6 +317,7 @@ namespace FruitFlyBridge
                 ["npcs_removed"] = npcsRemoved,
                 ["projectiles_removed"] = projRemoved,
                 ["moved_to_arena"] = moved,
+                ["tombstone_tiles_removed"] = graves,
             };
         }
 
@@ -343,6 +355,22 @@ namespace FruitFlyBridge
                 proj.friendly = false;
             }
             return new JObject { ["ok"] = true, ["index"] = idx, ["type"] = type };
+        }
+
+        /// <summary>quick_heal: the game's own Quick Heal (the H key) --
+        /// drinks the best healing potion in the inventory, if potion
+        /// sickness allows. Reports HP before/after.</summary>
+        public static JObject QuickHeal(JObject req)
+        {
+            var p = Main.LocalPlayer;
+            int before = p.statLife;
+            bool sick = p.potionDelay > 0;
+            if (!sick && !p.dead)
+            {
+                p.QuickHeal();
+            }
+            return new JObject { ["ok"] = true, ["hp_before"] = before, ["hp_after"] = p.statLife,
+                                 ["potion_sick"] = sick, ["healed"] = p.statLife > before };
         }
 
         /// <summary>select_slot {slot}: hotbar slot 0-9, so the harness can
@@ -544,6 +572,15 @@ namespace FruitFlyBridge
             int RowY(int r) => feet - r * spacing;
             bool InWorld(int x, int y) => x > 10 && y > 10 && x < Main.maxTilesX - 10 && y < Main.maxTilesY - 10;
 
+            // clear: wipe everything (sky islands, trees, old builds, liquid,
+            // walls) in the arena box first, from just above the floor line up
+            // to 3 tiles past the top row and 2 past each side.
+            int clearedTiles = 0;
+            if ((bool?)req["clear"] ?? false)
+            {
+                clearedTiles = ClearArea(cx - half - 2, RowY(rows) - 3, cx + half + 2, feet - 1);
+            }
+
             int floorPlaced = 0;
             for (int r = 1; r <= rows; r++)
             {
@@ -630,11 +667,92 @@ namespace FruitFlyBridge
             {
                 ["ok"] = allOk,
                 ["error"] = allOk ? null : "some furniture could not be placed (see campfires/lanterns)",
+                ["cleared_tiles"] = clearedTiles,
                 ["floor_tiles_placed"] = floorPlaced,
                 ["campfires"] = fires,
                 ["lanterns"] = lanterns,
                 ["arena"] = new JObject { ["x"] = origin.X, ["y"] = origin.Y },
             };
+        }
+
+        /// <summary>
+        /// Wipe a rectangle of tiles (inclusive): blocks, walls, liquid, wires,
+        /// plus the chests and signs stored there. Used to clear sky islands
+        /// and anything else out of the arena. Direct clearing, no item drops.
+        /// </summary>
+        public static int ClearArea(int x0, int y0, int x1, int y1)
+        {
+            x0 = Math.Max(x0, 5); y0 = Math.Max(y0, 5);
+            x1 = Math.Min(x1, Main.maxTilesX - 6); y1 = Math.Min(y1, Main.maxTilesY - 6);
+            for (int i = 0; i < Main.maxChests; i++)
+            {
+                var c = Main.chest[i];
+                if (c != null && c.x >= x0 && c.x <= x1 && c.y >= y0 && c.y <= y1)
+                {
+                    Main.chest[i] = null;
+                }
+            }
+            for (int i = 0; i < Main.sign.Length; i++)
+            {
+                var sg = Main.sign[i];
+                if (sg != null && sg.x >= x0 && sg.x <= x1 && sg.y >= y0 && sg.y <= y1)
+                {
+                    Main.sign[i] = null;
+                }
+            }
+            int cleared = 0;
+            for (int x = x0; x <= x1; x++)
+            {
+                for (int y = y0; y <= y1; y++)
+                {
+                    var t = Main.tile[x, y];
+                    if (t.HasTile || t.WallType != 0 || t.LiquidAmount != 0)
+                    {
+                        cleared++;
+                    }
+                    t.ClearEverything();
+                }
+            }
+            WorldGen.RangeFrame(x0, y0, x1, y1);
+            return cleared;
+        }
+
+        /// <summary>
+        /// Remove gravestones (TileID.Tombstones) in a rectangle, or the whole
+        /// world if no rectangle is given, with their epitaph signs. Called at
+        /// every reset_episode around the arena, and by clear_tombstones.
+        /// </summary>
+        public static int ClearTombstones(int x0 = 0, int y0 = 0, int x1 = -1, int y1 = -1)
+        {
+            if (x1 < 0) { x1 = Main.maxTilesX - 1; }
+            if (y1 < 0) { y1 = Main.maxTilesY - 1; }
+            x0 = Math.Max(x0, 0); y0 = Math.Max(y0, 0);
+            x1 = Math.Min(x1, Main.maxTilesX - 1); y1 = Math.Min(y1, Main.maxTilesY - 1);
+            int removed = 0;
+            for (int x = x0; x <= x1; x++)
+            {
+                for (int y = y0; y <= y1; y++)
+                {
+                    var t = Main.tile[x, y];
+                    if (t.HasTile && t.TileType == TileID.Tombstones)
+                    {
+                        Sign.KillSign(x, y);
+                        t.ClearTile();
+                        removed++;
+                    }
+                }
+            }
+            if (removed > 0)
+            {
+                WorldGen.RangeFrame(x0, y0, x1, y1);
+            }
+            return removed;
+        }
+
+        public static JObject ClearTombstonesCommand(JObject req)
+        {
+            int n = ClearTombstones();
+            return new JObject { ["ok"] = true, ["tombstone_tiles_removed"] = n };
         }
 
         private static Item Template(JToken tok, JArray unknown)

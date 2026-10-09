@@ -57,6 +57,19 @@ namespace FruitFlyBridge
         private void Apply()
         {
             var action = BridgeSystem.GetCurrentAction();
+            if (Episode.PassthroughMovement)
+            {
+                // Human demo: leave the real keyboard alone; only add item use
+                // (whip assist) when the bridge asks for it.
+                if (action.UseItem)
+                {
+                    Player.controlUseItem = true;
+                    Player.delayUseItem = false;
+                    Player.releaseUseItem = true;
+                    Player.mouseInterface = false;
+                }
+                return;
+            }
             Player.controlLeft = action.Left;
             Player.controlRight = action.Right;
             Player.controlJump = action.Jump;

@@ -159,6 +159,7 @@ namespace FruitFlyBridge
             finally
             {
                 Interlocked.Decrement(ref _connectedClients);
+                Episode.PassthroughMovement = false;
                 SetCurrentAction(new ActionState()); // release all keys once the bridge disconnects
             }
         }
@@ -204,6 +205,10 @@ namespace FruitFlyBridge
                     return new JObject { ["ok"] = true, ["keep_focus"] = Episode.KeepFocus,
                                          ["force_active_available"] = FocusHack.Available };
 
+                case "set_passthrough":
+                    Episode.PassthroughMovement = (bool?)request["enabled"] ?? true;
+                    return new JObject { ["ok"] = true, ["passthrough"] = Episode.PassthroughMovement };
+
                 case "set_arena":
                     return HarnessSystem.RunOnGameThread(() => HarnessSystem.SetArena(request));
 
@@ -222,8 +227,14 @@ namespace FruitFlyBridge
                 case "apply_buffs":
                     return HarnessSystem.RunOnGameThread(() => Setup.ApplyBuffs(request));
 
+                case "clear_tombstones":
+                    return HarnessSystem.RunOnGameThread(() => Setup.ClearTombstonesCommand(request));
+
                 case "build_arena":
                     return HarnessSystem.RunOnGameThread(() => Setup.BuildArena(request));
+
+                case "quick_heal":
+                    return HarnessSystem.RunOnGameThread(() => HarnessSystem.QuickHeal(request));
 
                 case "select_slot":
                     return HarnessSystem.RunOnGameThread(() => HarnessSystem.SelectSlot(request));
