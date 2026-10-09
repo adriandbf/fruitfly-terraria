@@ -327,8 +327,10 @@ class FlyPolicy:
             cx, cy = n.get("cx", n["x"]), n.get("cy", n["y"])
             rx, ry = pcx - cx, pcy - cy
             dist = max(1.0, math.hypot(rx, ry) - 40.0)
-            closing = max(1.0, ((n.get("vx", 0.0) - pvx) * rx + (n.get("vy", 0.0) - pvy) * ry) / (math.hypot(rx, ry) or 1.0))
-            out.append(({"x": cx, "y": cy, "hostile": True, "from_npc": n.get("type")}, dist / closing))
+            true_closing = ((n.get("vx", 0.0) - pvx) * rx + (n.get("vy", 0.0) - pvy) * ry) / (math.hypot(rx, ry) or 1.0)
+            closing = max(1.0, true_closing)
+            out.append(({"x": cx, "y": cy, "hostile": True, "from_npc": n.get("type"),
+                         "approaching": true_closing > 0.5}, dist / closing))
         return out
 
     def most_urgent(self, state):
@@ -339,7 +341,12 @@ class FlyPolicy:
         """(most urgent threat from ABOVE, most urgent threat level/below)."""
         p = state.get("player") or {}
         pcy = p.get("cy", p.get("y", 0.0))
-        above = [t for t in self._threats(state) if t[0]["y"] < pcy - self.ABOVE_PX]
+        # Only things actually approaching count as looming from above: the
+        # boss's head hangs ~270 px overhead all fight, and treating it as a
+        # threat made LPLC4 fire constantly (first brain-in-the-loop run:
+        # 100% dive). Projectiles are only listed when closing anyway.
+        above = [t for t in self._threats(state)
+                 if t[0]["y"] < pcy - self.ABOVE_PX and t[0].get("approaching", True)]
         level = [t for t in self._threats(state) if t[0]["y"] >= pcy - self.ABOVE_PX]
         pick = lambda ts: min(ts, key=lambda t: t[1])[0] if ts else None
         return pick(above), pick(level)
