@@ -44,7 +44,7 @@
   "inventory": [
     {
       "name": "SuperHealingPotion",
-      "stack": 30
+      "stack": 10
     }
   ],
   "max_stats": true,
@@ -88,6 +88,11 @@
       129
     ],
     "replace_platforms": true,
-    "furniture_row_every": 5
-  }
+    "furniture_row_every": 5,
+    "max_rise_tiles": 150,
+    "clear": true
+  },
+  "heal_at_hp": 300,
+  "restock_potions": 10,
+  "heal_potion": "SuperHealingPotion"
 }

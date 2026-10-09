@@ -9,6 +9,7 @@ cd "$(dirname "$0")/../.."
 PY=${PY:-python}
 H="training/moonlord/harness.py"
 N=${N:-5}
+START=$(date +%Y%m%d_%H%M%S)
 
 echo "== 2. idle baseline (no movement)"
 $PY $H --policy idle --episodes "$N" --seed 100
@@ -16,9 +17,9 @@ echo "== 3. random keys baseline"
 $PY $H --policy random --episodes "$N" --seed 100
 echo "== 4. scripted dodger (the ceiling)"
 $PY $H --policy scripted --episodes "$N" --seed 100
-echo "== 5. the fly (stopgap projectile sense: projectiles shown to LC4 as enemies)"
+echo "== 5. the fly (attention + flee-by-flying rule)"
 $PY $H --policy fly --episodes "$N" --seed 100
-echo "== 6. focus test: random keys with --keep-focus; click another app during it and see if the game keeps running"
-$PY $H --policy random --episodes 1 --keep-focus --seed 999
+echo "== 6. the fly without the flee-by-flying rule (ablation)"
+$PY $H --policy fly --episodes "$N" --seed 100 --no-fly-flee
 echo "== report"
-$PY training/moonlord/report.py
+$PY training/moonlord/report.py --since "$START"

@@ -55,7 +55,7 @@ debug_only = {"has_focus", "control_left", "control_right", "velocity_x", "is_op
               # item-use diagnostics (debug block only)
               "control_use_item", "release_use_item", "delay_use_item", "item_animation", "mouse_interface",
               "held_item_type", "held_item_name", "mouse_world_x", "mouse_world_y", "whip_projectiles",
-              "game_is_active", "game_paused"}
+              "game_is_active", "game_paused", "control_jump", "control_up", "control_down"}
 missing = sorted(mod_keys - fake_keys - debug_only)
 check("fake get_state has every key the mod emits", not missing, f"missing {missing}")
 
@@ -137,9 +137,32 @@ action, sources = fly.act(state)
 lc4 = set(neurons.LC4_LOOMING_LEFT) | set(neurons.LC4_LOOMING_RIGHT)
 ids, rates = stub.calls[-1]
 check("the threat drives LC4", any(i in lc4 and r > 0 for i, r in zip(ids, rates)))
-check("fly actions are credited to the brain, up/down/use held off",
-      all(v == "brain" for v in sources.values()) and not action["up"] and not action["down"] and not action["use"],
-      f"{action} {sources}")
+check("fleeing fly: direction from the brain, flight from the rule, no up/use",
+      sources.get("left") == "brain" and sources.get("jump") == "rule"
+      and not action["up"] and not action["use"], f"{action} {sources}")
+
+# 8b. Attention: an incoming bolt about to hit beats the closer but slow core.
+core_state = {"in_world": True, "player": dict(p), "players": [], "projectiles": [
+    {"type": 462, "cx": 200.0, "cy": 0.0, "vx": -10.0, "vy": 0.0, "width": 8, "height": 8, "damage": 70}],
+    "npcs": [{"type": 398, "x": -23.0, "y": 97.0, "cx": 0.0, "cy": 130.0, "vx": 0.0, "vy": 0.0,
+              "moon_lord_part": True, "hostile": True}]}
+urgent = fly.most_urgent(core_state)
+check("attention picks the bolt (20 ticks away) over the core", urgent and urgent.get("from_projectile") == 462, str(urgent))
+
+# 8c. Sawtooth: climbing fast switches to a dive; falling fast switches back.
+fly2 = policies.FlyPolicy(brain=StubBrain(), readout_fn=lambda _s: fake_rates)
+fly2.reset()
+st_up = {**state, "player": {**p, "vy": -12.0}}
+a1, _ = fly2.act(st_up)
+st_down = {**state, "player": {**p, "vy": 7.0}}
+a2, _ = fly2.act(st_down)
+check("sawtooth: dive after a fast climb, climb after a fast fall",
+      a1["down"] and not a1["jump"] and a2["jump"] and not a2["down"], f"{a1} {a2}")
+fly3 = policies.FlyPolicy(brain=StubBrain(), readout_fn=lambda _s: fake_rates, fly_flee=False)
+fly3.reset()
+a3, s3 = fly3.act(state)
+check("fly_flee=False leaves the decoder's own action, all credited 'brain'",
+      all(v == "brain" for v in s3.values()) and not a3["down"], f"{a3} {s3}")
 
 # 9. Whip assist: swings at the boss with aim, credited "assist", and the
 #    fly/scripted policies are never credited for `use`.
@@ -193,6 +216,33 @@ check("leash interventions are counted", row["ledger"].get("leash", 0) > 0, str(
 b = FakeMoonLordBridge()
 harness.run_episode(b, policies.IdlePolicy(), cfg(summon_slots=[1], max_seconds={"fight": 1.0}), 0)
 check("setup fills all 9 minion slots", b.minions == b.max_minions, f"{b.minions}/{b.max_minions}")
+
+# 14. Heal assist: drinks at <= 300 HP, once per potion sickness, after a restock.
+b = FakeMoonLordBridge({"seed": 2})
+b.potions = 0
+row = harness.run_episode(b, policies.IdlePolicy(), cfg(summon_slots=[1], heal_at_hp=300, restock_potions=10), 2)
+check("restock + heal assist drink a potion", row["heals"] >= 1 and b.potions == 10 - row["heals"],
+      f"heals {row['heals']}, potions left {b.potions}")
+b = FakeMoonLordBridge({"seed": 2})
+row = harness.run_episode(b, policies.IdlePolicy(), cfg(summon_slots=[1], heal_at_hp=0), 2)
+check("heal_at_hp=0 turns the assist off", row["heals"] == 0)
+
+# 15. Predictive leash: a fast climb is turned into a hover before the top.
+st = {"episode": {"arena": {"x": 0.0, "y": 0.0}},
+      "player": {"cx": 10.0, "cy": -2200.0, "vy": -18.0, "width": 20, "height": 42}}
+out, changed = harness.leash(st, {"jump": True, "up": True}, {"half_width_tiles": 100, "rows": 16,
+                                                              "row_spacing_tiles": 12, "max_rise_tiles": 160})
+check("leash stops a climb that would coast past the top",
+      not out["jump"] and not out["up"] and set(changed) == {"up", "jump"}, f"{out} {changed}")
+
+# 16. Human demos: passthrough on during the episode, off after; the human's
+#     keys are logged and credited "human"; free mode spawns nothing.
+b = FakeMoonLordBridge({"seed": 9})
+b.human_keys = {"right": True, "jump": True}
+row = harness.run_episode(b, policies.HumanPolicy(), cfg(mode="free", max_seconds={"free": 2.0}), 9)
+check("human demo logs the human's keys", row["ledger"].get("human", 0) > 0 and b.vx > 0, str(row["ledger"]))
+check("passthrough is switched off after the demo", b.passthrough is False)
+check("free mode spawns no boss", b.boss is None and row["outcome"] == "survived", row["outcome"])
 
 # 10. loadout.json parses and every slot entry has a usable shape.
 import json  # noqa: E402
