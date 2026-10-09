@@ -57,7 +57,8 @@ def main():
         rows = [r for r in rows if r.get("run", "") >= args.since]
     groups = collections.defaultdict(list)
     for r in rows:
-        groups[(r["policy"] + (f"[{r['variant']}]" if r.get("variant") else ""), r["mode"])].append(r)
+        tag = ",".join(x for x in (r.get("variant"), (f"whip_{r['whip_strategy']}" if r.get("whip_strategy") else None)) if x)
+        groups[(r["policy"] + (f"[{tag}]" if tag else ""), r["mode"])].append(r)
     for (pol, mode), rs in sorted(groups.items()):
         n = len(rs)
         secs = sorted(r["seconds"] for r in rs)
@@ -76,7 +77,7 @@ def main():
         left += f", eyes destroyed {sum(eyes)}/{3 * len(eyes)}" if eyes else ""
         gs = [r["game_speed"] for r in rs if r.get("game_speed")]
         speed = f"{sum(gs) / len(gs):.2f}x" if gs else "n/a"
-        print(f"{pol:22s} {mode:5s} n={n:3d}  win {sum(r['win'] for r in rs)}/{n}  "
+        print(f"{pol:44s} {mode:5s} n={n:3d}  win {sum(r['win'] for r in rs)}/{n}  "
               f"median {secs[n // 2]:6.1f}s  dmg/min {sum(r['damage_per_min'] for r in rs) / n:6.0f}  "
               f"boss HP left {left}  game speed {speed}  ledger {dict(led)}")
     if not args.fake:

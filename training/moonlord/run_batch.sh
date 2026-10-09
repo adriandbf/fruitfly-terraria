@@ -11,15 +11,17 @@ H="training/moonlord/harness.py"
 N=${N:-5}
 START=$(date +%Y%m%d_%H%M%S)
 
-echo "== 2. idle baseline (no movement)"
-$PY $H --policy idle --episodes "$N" --seed 100
-echo "== 3. random keys baseline"
-$PY $H --policy random --episodes "$N" --seed 100
-echo "== 4. scripted dodger (the ceiling)"
-$PY $H --policy scripted --episodes "$N" --seed 100
-echo "== 5. the fly, climb/dive from the brain (LC4 -> climb, LPLC4 -> dive)"
-$PY $H --policy fly --episodes "$N" --seed 100 --fly-vertical brain
-echo "== 6. the fly, climb/dive from the hand-written sawtooth"
-$PY $H --policy fly --episodes "$N" --seed 100 --fly-vertical rule
+echo "== 1. idle baseline"
+$PY $H --policy idle --episodes "$N" --seed 100 --whip-strategy balanced
+echo "== 2. random keys baseline"
+$PY $H --policy random --episodes "$N" --seed 100 --whip-strategy balanced
+echo "== 3. scripted dodger, whip targets the nearest part (old)"
+$PY $H --policy scripted --episodes "$N" --seed 100 --whip-strategy nearest
+echo "== 4. scripted dodger, balanced whip targeting (hands low, head, hands, core)"
+$PY $H --policy scripted --episodes "$N" --seed 100 --whip-strategy balanced
+echo "== 5. fly, brain climb/dive + direction commitment"
+$PY $H --policy fly --episodes "$N" --seed 100 --fly-vertical brain --fly-commit 10 --whip-strategy balanced
+echo "== 6. fly, hand-rule climb/dive + direction commitment"
+$PY $H --policy fly --episodes "$N" --seed 100 --fly-vertical rule --fly-commit 10 --whip-strategy balanced
 echo "== report"
 $PY training/moonlord/report.py --since "$START"
