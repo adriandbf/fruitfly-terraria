@@ -1,0 +1,89 @@
+{
+  "encoder": {
+    "max_rate_hz": 189.103,
+    "threat_max_range_px": 385.5362,
+    "contra_fraction": 0.0079
+  },
+  "decoder": {
+    "steer_margin_hz": 3.7945,
+    "forward_threshold_hz": 65.9342,
+    "backward_threshold_hz": 81.0361,
+    "jump_threshold_hz": 4.2628,
+    "flee_on_hz": 43.4299,
+    "flee_off_hz": 43.4299,
+    "flee_hold_ticks": 8
+  },
+  "policy": {
+    "threat_horizon_ticks": 150,
+    "commit_ticks": 7,
+    "dive_on_hz": 62.3124,
+    "above_px": 0.0
+  },
+  "meta": {
+    "method": "imitation",
+    "engine": "table",
+    "null": "none",
+    "teachers": "human,scripted",
+    "min_seconds": 35.0,
+    "teacher_logs": [
+      "logs/moonlord/20261008_235506_scripted_fight_ep000.jsonl",
+      "logs/moonlord/20261009_005409_human_fight_ep000.jsonl",
+      "logs/moonlord/20261009_005409_human_fight_ep001.jsonl",
+      "logs/moonlord/20261009_010338_scripted_fight_ep003.jsonl",
+      "logs/moonlord/20261009_013219_scripted_fight_ep000.jsonl",
+      "logs/moonlord/20261009_013219_scripted_fight_ep001.jsonl",
+      "logs/moonlord/20261009_013219_scripted_fight_ep002.jsonl",
+      "logs/moonlord/20261009_013219_scripted_fight_ep003.jsonl",
+      "logs/moonlord/20261009_013219_scripted_fight_ep004.jsonl",
+      "logs/moonlord/20261009_014320_human_fight_ep000.jsonl",
+      "logs/moonlord/20261009_014320_human_fight_ep001.jsonl",
+      "logs/moonlord/20261009_014320_human_fight_ep002.jsonl",
+      "logs/moonlord/20261009_134106_scripted_fight_ep000.jsonl",
+      "logs/moonlord/20261009_134106_scripted_fight_ep001.jsonl",
+      "logs/moonlord/20261009_134106_scripted_fight_ep002.jsonl",
+      "logs/moonlord/20261009_134106_scripted_fight_ep003.jsonl",
+      "logs/moonlord/20261009_134106_scripted_fight_ep004.jsonl",
+      "logs/moonlord/20261009_134106_scripted_fight_ep005.jsonl",
+      "logs/moonlord/20261009_134106_scripted_fight_ep007.jsonl",
+      "logs/moonlord/20261009_134106_scripted_fight_ep009.jsonl"
+    ],
+    "held_out": [
+      3,
+      7,
+      11,
+      15,
+      19
+    ],
+    "train_defaults": {
+      "score": 0.38617762187308546,
+      "horizontal": 0.38412426007432704,
+      "vertical": 0.3882309836718439,
+      "raw_h": 0.5107313738892686,
+      "raw_v": 0.5021189336978811
+    },
+    "train_best": {
+      "score": 0.4329360870504271,
+      "gen": 21,
+      "horizontal": 0.40940997918704625,
+      "vertical": 0.45646219491380785,
+      "raw_h": 0.4613807245386193,
+      "raw_v": 0.49706083390293915
+    },
+    "heldout_defaults": {
+      "score": 0.3689235176671465,
+      "horizontal": 0.3381530770037238,
+      "vertical": 0.3996939583305692,
+      "raw_h": 0.4591679506933744,
+      "raw_v": 0.45557267591165895
+    },
+    "heldout_best": {
+      "score": 0.3815386644281318,
+      "horizontal": 0.3558840474242165,
+      "vertical": 0.4071932814320471,
+      "raw_h": 0.4504365690806369,
+      "raw_v": 0.4576271186440678
+    },
+    "generations": 30,
+    "finished": "2026-10-09 15:31:45"
+  }
+}

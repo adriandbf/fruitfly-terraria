@@ -1,0 +1,57 @@
+{
+  "encoder": {
+    "max_rate_hz": 89.7258,
+    "threat_max_range_px": 326.5147,
+    "contra_fraction": 0.1494
+  },
+  "decoder": {
+    "steer_margin_hz": 6.0465,
+    "forward_threshold_hz": 82.054,
+    "backward_threshold_hz": 25.0157,
+    "jump_threshold_hz": 56.6032,
+    "flee_on_hz": 18.8121,
+    "flee_off_hz": 18.8121,
+    "flee_hold_ticks": 13
+  },
+  "policy": {
+    "threat_horizon_ticks": 166,
+    "commit_ticks": 28,
+    "dive_on_hz": 97.5692,
+    "above_px": 47.9397
+  },
+  "meta": {
+    "engine": "table",
+    "null": "none",
+    "table": "/home/claude/ff/brain/data/response_table_np_none.npz",
+    "picked": "mean",
+    "train_seeds": 12,
+    "heldout_seeds": 30,
+    "generations": 40,
+    "popsize": 16,
+    "fake_config": {},
+    "whip_strategy": "balanced",
+    "max_seconds": 180.0,
+    "train_progress_defaults": 0.1949166666666667,
+    "train_progress_best": 0.5559166666666666,
+    "heldout": {
+      "defaults": {
+        "progress": 0.20166666666666663,
+        "seconds": 21.2,
+        "wins": 0
+      },
+      "best": {
+        "progress": 0.48460000000000003,
+        "seconds": 50.91333333333332,
+        "wins": 0
+      },
+      "mean": {
+        "progress": 0.5204,
+        "seconds": 54.67333333333334,
+        "wins": 0
+      }
+    },
+    "history": "logs/moonlord/cma_20261009_153150_cma_table_defaults.jsonl",
+    "finished": "2026-10-09 15:39:37",
+    "seconds": 467
+  }
+}
