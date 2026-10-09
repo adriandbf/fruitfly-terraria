@@ -82,10 +82,12 @@ class ScriptedDodger:
     STEP = 3       # ticks per lookahead sample
     MARGIN = 14.0  # px of extra clearance wanted around each projectile
 
-    # ring/keep-away tuned offline on the recalibrated fake (2026-10-09, 10 seeds):
-    # (350, 700) px / 150 px gave median 109 s vs 43 s for the old (450, 900) / 250;
-    # it also matches the human demos (~340-455 px from the core).
-    def __init__(self, boss_keep_away=150.0, ring=(350.0, 700.0), arena_half_width=1300.0,
+    # ring/keep-away: (450, 900) px / 250 px. A retune to (350, 700) / 150 looked far
+    # better OFFLINE (median 109 s vs 43 s) but halved survival LIVE (20.4 s vs
+    # 40.5 s median, 5 fights each, 2026-10-09; more head/body contact hits), and
+    # the fake still prefers it even with head contact added -- so the fake is
+    # not trusted for this knob; the live result wins.
+    def __init__(self, boss_keep_away=250.0, ring=(450.0, 900.0), arena_half_width=1300.0,
                  arena_height=2900.0, beam_width=40.0):
         self.boss_keep_away, self.ring = boss_keep_away, ring
         self.arena_half_width, self.arena_height = arena_half_width, arena_height
