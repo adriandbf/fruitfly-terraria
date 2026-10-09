@@ -33,11 +33,12 @@ PARAM_SPEC = [
     ("policy", "commit_ticks", 0, 30, True),
     ("policy", "dive_on_hz", 10.0, 150.0, False),
     ("policy", "above_px", 0.0, 300.0, False),
+    ("policy", "keep_away_px", 0.0, 1500.0, False),   # 0 = off (the core looms only within threat range)
 ]
 
 # Hand-picked starting point (the live "fly brain" setup before tuning):
 # the module defaults, plus FlyPolicy's defaults.
-POLICY_DEFAULTS = {"threat_horizon_ticks": 90, "commit_ticks": 0, "dive_on_hz": 40.0, "above_px": 60.0}
+POLICY_DEFAULTS = {"threat_horizon_ticks": 90, "commit_ticks": 0, "dive_on_hz": 40.0, "above_px": 60.0, "keep_away_px": 0.0}
 
 
 def _defaults():

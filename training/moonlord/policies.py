@@ -88,8 +88,12 @@ class ScriptedDodger:
     # the fake still prefers it even with head contact added -- so the fake is
     # not trusted for this knob; the live result wins.
     def __init__(self, boss_keep_away=250.0, ring=(450.0, 900.0), arena_half_width=1300.0,
-                 arena_height=2900.0, beam_width=40.0):
+                 arena_height=2900.0, beam_width=40.0, dither_cost=0.2):
         self.boss_keep_away, self.ring = boss_keep_away, ring
+        # Cost of changing (direction, vertical mode) from the last tick. 0.2
+        # (default) let it flip direction 1.9x/s live; the human sweeps for
+        # seconds at a time (0.27 flips/s, 2026-10-09 large world).
+        self.dither_cost = dither_cost
         self.arena_half_width, self.arena_height = arena_half_width, arena_height
         self.beam_width = beam_width
         self.reset()
@@ -214,7 +218,7 @@ class ScriptedDodger:
                 if apex < top:
                     cost += 2.0 * (top - apex)
                 cost += 1.0 * (h == 0)                     # keep moving sideways (the human demos almost never stop)
-                cost += 0.2 * ((h, mode) != self.prev)     # mild preference not to dither
+                cost += self.dither_cost * ((h, mode) != self.prev)  # preference not to dither
                 if best_cost is None or cost < best_cost:
                     best, best_cost = (h, mode), cost
         self.prev = best
@@ -256,7 +260,7 @@ class FlyPolicy:
     def __init__(self, enc_params=None, dec_params=None, brain=None, readout_fn=None,
                  threat_horizon_ticks=90, fly_flee=True, vertical="brain",
                  commit_ticks=0, dive_on_hz=40.0, waypoint=False, waypoint_px=600.0,
-                 above_px=None):
+                 above_px=None, keep_away_px=0.0):
         root = Path(__file__).resolve().parents[2]
         for sub in ("brain", "interface"):
             if str(root / sub) not in sys.path:
@@ -269,6 +273,14 @@ class FlyPolicy:
         self.threat_horizon = threat_horizon_ticks
         if above_px is not None:
             self.ABOVE_PX = float(above_px)
+        # (4) keep-away: the boss's core also looms from up to keep_away_px away
+        # (instead of only within the encoder's threat range), so the brain's
+        # own flee reflex keeps the fly at a distance -- what the human demos
+        # do (median ~660 px from the core in the large world, 2026-10-09).
+        # Implemented as attention, like the rest: the core is shown to LC4 at
+        # a distance scaled by threat_max_range / keep_away_px, same side, so
+        # the drive falls off linearly over keep_away_px. 0 = off.
+        self.keep_away_px = float(keep_away_px or 0.0)
         self.fly_flee = fly_flee
         # vertical: "brain" = climb/dive from the connectome (LC4 -> Giant Fiber
         # = climb, LPLC4 -> DNp07 landing = dive; M3, 2026-10-09); "rule" = the
@@ -350,6 +362,35 @@ class FlyPolicy:
                          "approaching": true_closing > 0.5}, dist / closing))
         return out
 
+    def _core_pseudo(self, state):
+        """The core as a looming stimulus over keep_away_px (see __init__), as
+        (pseudo-NPC, effective distance), or None."""
+        if not self.keep_away_px:
+            return None
+        core = next((n for n in state.get("npcs", []) if n.get("type") == 398), None)
+        if core is None:
+            return None
+        p = state["player"]
+        px, py = p.get("cx", p["x"]), p.get("cy", p["y"])
+        cx, cy = core.get("cx", core["x"]), core.get("cy", core["y"])
+        d = math.hypot(cx - px, cy - py) or 1.0
+        rng = {**self.encoder.DEFAULT_PARAMS, **(self.enc_params or {})}["threat_max_range_px"]
+        eff = d * rng / self.keep_away_px
+        # encoder measures from player x/y (top-left), so place it relative to that
+        return ({"x": p["x"] + (cx - px) * eff / d, "y": p["y"] + (cy - py) * eff / d, "hostile": True,
+                 "from_npc": 398, "keep_away": True}, eff)
+
+    def _with_core(self, state, chosen):
+        """Swap in the keep-away core if it looms harder than the chosen threat."""
+        cp = self._core_pseudo(state)
+        if cp is None:
+            return chosen
+        if chosen is None:
+            return cp[0]
+        p = state["player"]
+        d_chosen = math.hypot(chosen["x"] - p["x"], chosen["y"] - p["y"])
+        return cp[0] if cp[1] < d_chosen else chosen
+
     def most_urgent(self, state):
         threats = self._threats(state)
         return min(threats, key=lambda t: t[1])[0] if threats else None
@@ -406,10 +447,12 @@ class FlyPolicy:
         if self.vertical == "brain":
             above, level = self.urgent_by_elevation(state)
             self.last_threat = {"above": above, "level": level}
+            level = self._with_core(state, level)
+            self.last_threat["level"] = level
             seen["npcs"] = [level] if level else []          # LC4 channel: level/below threat
             extra_ids, extra_rates = self._lplc4_drive(state, above)  # LPLC4 channel: threat from above
         else:
-            threat = self.most_urgent(state)
+            threat = self._with_core(state, self.most_urgent(state))
             self.last_threat = threat
             seen["npcs"] = [threat] if threat else []   # attention: one threat, the most urgent
         if self.waypoint:

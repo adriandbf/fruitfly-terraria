@@ -557,6 +557,9 @@ def main(argv=None):
     ap.add_argument("--params-file", default=None, help="tuned params JSON for --policy fly (encoder/decoder/policy blocks, from train_fly_cma.py or imitate.py)")
     ap.add_argument("--gym-types", default=None, help="projectile type ids for gym volleys, e.g. 462,454,452")
     ap.add_argument("--fake", action="store_true", help="use the offline fake bridge instead of the game")
+    ap.add_argument("--dodger-ring", default=None, help="scripted: min,max px from the core to circle at (default 450,900)")
+    ap.add_argument("--dodger-keep-away", type=float, default=None, help="scripted: px to keep from every boss part (default 250)")
+    ap.add_argument("--dodger-dither", type=float, default=None, help="scripted: cost of changing move (default 0.2)")
     ap.add_argument("--no-log", action="store_true", help="don't write per-tick logs (summaries still written)")
     args = ap.parse_args(argv)
 
@@ -616,6 +619,12 @@ def main(argv=None):
         a = loadout.get("arena", {})
         rise = min(a.get("rows", 4) * a.get("row_spacing_tiles", 12), a.get("max_rise_tiles") or 10 ** 6)
         kw = {"arena_half_width": 0.9 * 16 * a.get("half_width_tiles", 90), "arena_height": 0.9 * 16 * rise}
+        if args.dodger_ring:
+            kw["ring"] = tuple(float(v) for v in args.dodger_ring.split(","))
+        if args.dodger_keep_away is not None:
+            kw["boss_keep_away"] = args.dodger_keep_away
+        if args.dodger_dither is not None:
+            kw["dither_cost"] = args.dodger_dither
     policy = make_policy(args.policy, seed=args.seed, **kw)
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -633,6 +642,10 @@ def main(argv=None):
                 row["log"] = str(log_path.relative_to(ROOT))
             row["run"] = stamp
             row["whip_strategy"] = cfg["whip_strategy"]
+            if args.policy == "scripted" and (args.dodger_ring or args.dodger_keep_away is not None
+                                              or args.dodger_dither is not None):
+                row["variant"] = (f"ring{args.dodger_ring or '450,900'}_keep{args.dodger_keep_away or 250:g}"
+                                  f"_dither{args.dodger_dither if args.dodger_dither is not None else 0.2:g}")
             if args.policy == "fly" and args.no_fly_flee:
                 row["variant"] = "no_fly_flee"
             elif args.policy == "fly" and args.params_file:
