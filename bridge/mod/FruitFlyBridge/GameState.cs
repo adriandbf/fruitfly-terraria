@@ -73,6 +73,8 @@ namespace FruitFlyBridge
                     ["width"] = player.width,
                     ["height"] = player.height,
                     ["wing_time"] = player.wingTime,
+                    // Actual gravity this tick (0.4 normally; lower near space, see Episode.FullGravityY).
+                    ["gravity"] = player.gravity,
                     ["wing_time_max"] = player.wingTimeMax,
                     ["mount_active"] = player.mount != null && player.mount.Active,
                     ["immune"] = player.immune,

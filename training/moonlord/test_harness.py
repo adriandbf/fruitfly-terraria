@@ -271,6 +271,13 @@ out, changed = harness.leash(st, {"jump": True, "up": True}, {"half_width_tiles"
 check("leash stops a climb that would coast past the top",
       not out["jump"] and not out["up"] and set(changed) == {"up", "jump"}, f"{out} {changed}")
 
+# 15b. The leash never climbs into reduced (space) gravity.
+st = {"episode": {"arena": {"x": 0.0, "y": 0.0}, "full_gravity_y": -1000.0},
+      "player": {"cx": 10.0, "cy": -980.0, "vy": 0.0, "width": 20, "height": 42}}
+out, changed = harness.leash(st, {"jump": True}, {"half_width_tiles": 100, "rows": 12,
+                                                   "row_spacing_tiles": 24, "max_rise_tiles": 280})
+check("leash stops climbing at the full-gravity line", not out["jump"] and changed == ["jump"], f"{out} {changed}")
+
 # 16. Human demos: passthrough on during the episode, off after; the human's
 #     keys are logged and credited "human"; free mode spawns nothing.
 b = FakeMoonLordBridge({"seed": 9})

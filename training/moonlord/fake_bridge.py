@@ -273,7 +273,7 @@ class FakeMoonLordBridge:
                        "hp": max(0, int(self.hp)), "max_hp": c["player_hp"], "mana": 200, "max_mana": 200,
                        "on_ground": self._on_ground(), "dead": self.dead, "ghost": False,
                        "vx": self.vx, "vy": self.vy, "width": c["player_w"], "height": c["player_h"],
-                       "wing_time": self.wing_time, "wing_time_max": c["wing_time_max"],
+                       "wing_time": self.wing_time, "gravity": 0.4, "wing_time_max": c["wing_time_max"],
                        "mount_active": c["infinite_flight"], "immune": self.immune > 0,
                        "minions": self.minions, "max_minions": self.max_minions,
                        "selected_item": self.selected,

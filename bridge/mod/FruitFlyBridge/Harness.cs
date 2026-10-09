@@ -62,7 +62,25 @@ namespace FruitFlyBridge
                 ["arena"] = ArenaPosition.HasValue
                     ? new JObject { ["x"] = ArenaPosition.Value.X, ["y"] = ArenaPosition.Value.Y }
                     : null,
+                ["full_gravity_y"] = FullGravityY(),
+                ["world_surface_y"] = Main.worldSurface * 16.0,
+                ["world_tiles"] = new JObject { ["x"] = Main.maxTilesX, ["y"] = Main.maxTilesY },
             };
+        }
+
+        /// <summary>
+        /// World y (px) above which gravity starts to drop toward space. Vanilla
+        /// Player.Update scales gravity by (y/16 - (60 + 10*(maxTilesX/4200)^2)) /
+        /// (worldSurface/6), clamped to [0.25, 1]; this is where that factor
+        /// reaches 1. Larger worlds put it further above the surface. (Formula
+        /// from the 1.4.4 game code as remembered, not read from source here:
+        /// the logged player.gravity is the ground truth.)
+        /// </summary>
+        public static double FullGravityY()
+        {
+            double n = Main.maxTilesX / 4200.0;
+            n *= n;
+            return (60.0 + 10.0 * n + Main.worldSurface / 6.0) * 16.0;
         }
 
         public static bool IsMoonLordPart(int type)
@@ -659,6 +677,15 @@ namespace FruitFlyBridge
                 }
             }
 
+            // Rows above the full-gravity line (0 = the whole arena has normal gravity).
+            int RowsInLowGravity()
+            {
+                int n = 0;
+                for (int r = 1; r <= rows; r++)
+                    if (RowY(r) * 16.0 < Episode.FullGravityY()) n++;
+                return n;
+            }
+
             Episode.ArenaPosition = origin;
             bool allOk = true;
             foreach (var f in fires) allOk &= (bool)f["ok"];
@@ -672,6 +699,9 @@ namespace FruitFlyBridge
                 ["campfires"] = fires,
                 ["lanterns"] = lanterns,
                 ["arena"] = new JObject { ["x"] = origin.X, ["y"] = origin.Y },
+                ["top_row_y"] = RowY(rows) * 16.0,
+                ["full_gravity_y"] = Episode.FullGravityY(),
+                ["rows_in_low_gravity"] = RowsInLowGravity(),
             };
         }
 

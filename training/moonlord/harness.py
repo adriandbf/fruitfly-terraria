@@ -191,6 +191,10 @@ def leash(state, action, arena_cfg, margin_px=48.0):
     changed = []
     out = dict(action)
     top = feet - height + margin_px
+    # Never into reduced gravity: above full_gravity_y (reported by the mod)
+    # gravity fades toward space, slowing falls (user, small world 2026-10-09).
+    if ep.get("full_gravity_y") is not None:
+        top = max(top, ep["full_gravity_y"] + margin_px)
     # A fast climb coasts upward for seconds after letting go (probe: up to
     # 18.7 px/tick vs ~0.1 px/tick^2 of gravity), so judge by where the climb
     # would END: if that's past the top, turn the climb into a hover.
