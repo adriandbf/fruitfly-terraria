@@ -1,5 +1,5 @@
 {
-  "_comment": "Pre-Moon Lord summoner for tModLoader (Terraria 1.4.4 content; tModLoader has no 1.4.5 port yet, so 1.4.5 items/changes don't apply). Applied by `harness.py --setup-character` (mod command equip_loadout). Each item is an internal ItemID name, a numeric item id, or a list of alternatives tried in order; ids are from terraria.wiki.gg. Accessory order is priority: 5 usable in a Normal world, 6 in Expert (Demon Heart slot), 7 in Master. Terraprisma (slot 1) is the summon cast at setup (user's choice, 2026-10-08); the Stardust Dragon Staff stays in slot 0 as a spare. Offensive swap (user, 2026-10-09): Spooky armour replaces Hallowed (summon), Hercules Beetle and Berserker's Glove replace Ankh Shield and Worm Scarf; no debuff immunity or damage reduction from those two any more. 2026-10-09 evening: Worm Scarf back in place of Berserker's Glove (live: Spooky + offensive accessories doubled minion damage but roughly doubled damage taken).",
+  "_comment": "Pre-Moon Lord summoner for tModLoader (Terraria 1.4.4 content; tModLoader has no 1.4.5 port yet, so 1.4.5 items/changes don't apply). Applied by `harness.py --setup-character` (mod command equip_loadout). Each item is an internal ItemID name, a numeric item id, or a list of alternatives tried in order; ids are from terraria.wiki.gg. Accessory order is priority: 5 usable in a Normal world, 6 in Expert (Demon Heart slot), 7 in Master. Terraprisma (slot 1) is the summon cast at setup (user's choice, 2026-10-08); the Stardust Dragon Staff stays in slot 0 as a spare. Offensive swap (user, 2026-10-09): Spooky armour replaces Hallowed (summon), Hercules Beetle and Berserker's Glove replace Ankh Shield and Worm Scarf; no debuff immunity or damage reduction from those two any more. 2026-10-09 evening: Worm Scarf back in place of Berserker's Glove (live: Spooky + offensive accessories doubled minion damage but roughly doubled damage taken). Arena for a LARGE world (user, 2026-10-09): rows 24 tiles apart (was 12) so falls keep their speed, 12 rows = 288 tiles tall, furniture every 2nd row to stay in buff range; the leash also stops at the mod's full-gravity line.",
   "armor": [
     [
       "SpookyHelmet",
@@ -68,8 +68,8 @@
   "buff_seconds": 900,
   "arena": {
     "half_width_tiles": 400,
-    "rows": 16,
-    "row_spacing_tiles": 12,
+    "rows": 12,
+    "row_spacing_tiles": 24,
     "furniture_spacing_tiles": 60,
     "floor_item": [
       "DayBloomPlanterBox",
@@ -88,8 +88,8 @@
       129
     ],
     "replace_platforms": true,
-    "furniture_row_every": 5,
-    "max_rise_tiles": 150,
+    "furniture_row_every": 2,
+    "max_rise_tiles": 280,
     "clear": true
   },
   "heal_at_hp": 300,
