@@ -1,17 +1,17 @@
 {
-  "_comment": "Pre-Moon Lord summoner for tModLoader (Terraria 1.4.4 content; tModLoader has no 1.4.5 port yet, so 1.4.5 items/changes don't apply). Applied by `harness.py --setup-character` (mod command equip_loadout). Each item is an internal ItemID name, a numeric item id, or a list of alternatives tried in order; ids are from terraria.wiki.gg. Accessory order is priority: 5 usable in a Normal world, 6 in Expert (Demon Heart slot), 7 in Master. Terraprisma (slot 1) is the summon cast at setup (user's choice, 2026-10-08); the Stardust Dragon Staff stays in slot 0 as a spare.",
+  "_comment": "Pre-Moon Lord summoner for tModLoader (Terraria 1.4.4 content; tModLoader has no 1.4.5 port yet, so 1.4.5 items/changes don't apply). Applied by `harness.py --setup-character` (mod command equip_loadout). Each item is an internal ItemID name, a numeric item id, or a list of alternatives tried in order; ids are from terraria.wiki.gg. Accessory order is priority: 5 usable in a Normal world, 6 in Expert (Demon Heart slot), 7 in Master. Terraprisma (slot 1) is the summon cast at setup (user's choice, 2026-10-08); the Stardust Dragon Staff stays in slot 0 as a spare. Offensive swap (user, 2026-10-09): Spooky armour replaces Hallowed (summon), Hercules Beetle and Berserker's Glove replace Ankh Shield and Worm Scarf; no debuff immunity or damage reduction from those two any more.",
   "armor": [
     [
-      "HallowedHood",
-      4873
+      "SpookyHelmet",
+      1832
     ],
     [
-      "HallowedPlateMail",
-      551
+      "SpookyBreastplate",
+      1833
     ],
     [
-      "HallowedGreaves",
-      552
+      "SpookyLeggings",
+      1834
     ]
   ],
   "accessories": [
@@ -23,8 +23,8 @@
     "PapyrusScarab",
     "NecromanticScroll",
     "PygmyNecklace",
-    "AnkhShield",
-    "WormScarf"
+    "HerculesBeetle",
+    "BerserkerGlove"
   ],
   "hotbar": [
     "StardustDragonStaff",
