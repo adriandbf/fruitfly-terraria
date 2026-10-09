@@ -465,6 +465,41 @@ def _mean_frac(rows):
     return f"{100 * sum(fr) / len(fr):.0f}%" if fr else "n/a"
 
 
+MARK_FILE = LOG_DIR / "arena_mark.json"
+
+
+def _world_id(ep):
+    """What identifies the world: its size and surface height (two worlds of
+    the same size almost never share a surface line)."""
+    return {"world_tiles": ep.get("world_tiles"), "world_surface_y": ep.get("world_surface_y")}
+
+
+def save_arena_mark(bridge):
+    """Remember the arena mark on disk: the mod keeps it only in memory, so a
+    mod rebuild or game restart forgets it (live 2026-10-09: the scripted
+    batch after a rebuild ran with no mark, so no leash and no reset-to-arena)."""
+    ep = bridge.request({"cmd": "get_episode"}).get("episode") or {}
+    if ep.get("arena") and ep.get("world_tiles"):
+        MARK_FILE.parent.mkdir(parents=True, exist_ok=True)
+        MARK_FILE.write_text(json.dumps({"arena": ep["arena"], **_world_id(ep)}))
+
+
+def restore_arena_mark(bridge):
+    """Put the saved mark back if the game has none and it's the same world.
+    Returns a short status line."""
+    ep = bridge.request({"cmd": "get_episode"}).get("episode") or {}
+    if ep.get("arena"):
+        return "arena mark: set"
+    if not MARK_FILE.exists():
+        return "arena mark: NONE (run --build-arena or --mark-arena on the arena floor)"
+    saved = json.loads(MARK_FILE.read_text())
+    if {k: saved.get(k) for k in ("world_tiles", "world_surface_y")} != _world_id(ep):
+        return "arena mark: NONE, and the saved one is for a different world (run --mark-arena on the arena floor)"
+    a = saved["arena"]
+    _ok(bridge.request({"cmd": "set_arena", "x": a["x"], "y": a["y"]}), "set_arena")
+    return f"arena mark: restored from {MARK_FILE.name} ({a['x']:.0f}, {a['y']:.0f})"
+
+
 def config_from_loadout(loadout, mode="fight", whip_strategy=None, buffs=True, heal=True, whip_assist=True):
     """Episode config for run_episode from loadout.json (shared by main()
     and the offline trainers, so they fight exactly the same fight)."""
@@ -529,6 +564,7 @@ def main(argv=None):
     loadout = json.loads(Path(args.loadout).read_text())
     if args.mark_arena:
         print(_ok(bridge.request({"cmd": "set_arena"}), "set_arena"))
+        save_arena_mark(bridge)
         return []
     if args.clear_tombstones:
         print(_ok(bridge.request({"cmd": "clear_tombstones"}), "clear_tombstones"))
@@ -542,9 +578,12 @@ def main(argv=None):
             mark = (bridge.request({"cmd": "get_episode"}).get("episode") or {}).get("arena")
             where = {"x": mark["x"], "y": mark["y"]} if mark else {}
             print(bridge.request({"cmd": "build_arena", **loadout.get("arena", {}), **where}))
+            save_arena_mark(bridge)
         bridge.close()
         return []
 
+    if not args.fake:
+        print(restore_arena_mark(bridge))
     cfg = config_from_loadout(loadout, args.mode, args.whip_strategy,
                               buffs=not args.no_loadout_buffs, heal=not args.no_heal,
                               whip_assist=not args.no_whip_assist)
