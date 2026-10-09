@@ -139,6 +139,18 @@ LC4_LOOMING = _ids("sensory", "lc4_looming")
 LC4_LOOMING_LEFT = _ids_by_side("sensory", "lc4_looming", "left")
 LC4_LOOMING_RIGHT = _ids_by_side("sensory", "lc4_looming", "right")
 
+# LPLC4: lobula plate/lobula columnar looming population. M3 sweep
+# (find_vertical_readout.py, 2026-10-09): drives the LANDING descending
+# neuron DNp07 hard (183 Hz both sides) and the Giant Fiber not at all --
+# the opposite of LC4 (Giant Fiber/takeoff, ~0 DNp07). Ipsilateral:
+# LPLC4_left -> DNp07_L 186 / R 84 Hz, right -> 0 / 166. Driving it at even
+# 50 Hz on top of full LC4 drive cuts the Giant Fiber from 94 to 34 Hz
+# (landing beats takeoff in this connectome). Used for "threat from above
+# -> dive" in the Moon Lord fly policy.
+LPLC4_LOOMING = _ids("sensory", "lplc4_looming")
+LPLC4_LOOMING_LEFT = _ids_by_side("sensory", "lplc4_looming", "left")
+LPLC4_LOOMING_RIGHT = _ids_by_side("sensory", "lplc4_looming", "right")
+
 # --- descending (decoder) ---
 DNP09_FORWARD = _ids("descending", "DNp09_forward_walk")
 DNP09_FORWARD_LEFT = _ids_by_side("descending", "DNp09_forward_walk", "left")
@@ -158,4 +170,10 @@ DNB05_MOVE = _ids("descending", "DNb05_forward_v2")
 DNB05_MOVE_LEFT = _ids_by_side("descending", "DNb05_forward_v2", "left")
 DNB05_MOVE_RIGHT = _ids_by_side("descending", "DNb05_forward_v2", "right")
 
-ALL_DESCENDING = DNP09_FORWARD + DNA02_STEERING + MDN_BACKWARD + DNP01_JUMP + DNB05_MOVE
+# DNp07: landing descending neuron (Ache et al. 2019: looming drives
+# landing via DNp07/DNp10 in flying flies). Fed by LPLC4, not LC4 (above).
+DNP07_LANDING = _ids("descending", "DNp07_landing")
+DNP07_LANDING_LEFT = _ids_by_side("descending", "DNp07_landing", "left")
+DNP07_LANDING_RIGHT = _ids_by_side("descending", "DNp07_landing", "right")
+
+ALL_DESCENDING = DNP09_FORWARD + DNA02_STEERING + MDN_BACKWARD + DNP01_JUMP + DNB05_MOVE + DNP07_LANDING
