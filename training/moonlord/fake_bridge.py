@@ -238,6 +238,12 @@ class FakeMoonLordBridge:
         npcs = []
         if self.boss:
             b = self.boss
+            for t, name, dx, dy in ((397, "Moon Lord's Hand", -400.0, -150.0), (397, "Moon Lord's Hand", 400.0, -150.0),
+                                    (396, "Moon Lord", 0.0, -400.0)):
+                npcs.append({"type": t, "name": name, "x": b["cx"] + dx - 23, "y": b["cy"] + dy - 33,
+                             "cx": b["cx"] + dx, "cy": b["cy"] + dy, "vx": 0.0, "vy": 0.0, "width": 46, "height": 66,
+                             "hp": 1, "max_hp": 1, "hostile": True, "boss": False, "moon_lord_part": True,
+                             "dont_take_damage": True})
             npcs.append({"type": MOON_LORD_CORE, "name": "Moon Lord", "x": b["cx"] - 60, "y": b["cy"] - 60,
                          "cx": b["cx"], "cy": b["cy"], "vx": 0.0, "vy": 0.0, "width": 120, "height": 120,
                          "hp": int(b["hp"]), "max_hp": c["boss_hp"], "hostile": True, "boss": True,
@@ -348,7 +354,10 @@ class FakeMoonLordBridge:
             self.boss, self.boss_killed, self.boss_kill_tick = None, True, self.ticks
             self.projs = [p for p in self.projs if p.type != PHANTASMAL_DEATHRAY]
             return
-        for bx, by in ((b["cx"], b["cy"]), (b["cx"] - 400.0, b["cy"] - 150.0), (b["cx"] + 400.0, b["cy"] - 150.0)):
+        # Contact: core, both hands and the head (live: head contact was a top
+        # hit source for the scripted dodger once it kept farther from the core).
+        for bx, by in ((b["cx"], b["cy"]), (b["cx"] - 400.0, b["cy"] - 150.0), (b["cx"] + 400.0, b["cy"] - 150.0),
+                       (b["cx"], b["cy"] - 400.0)):
             if math.hypot(pcx - bx, pcy - by) < c["contact_radius"]:
                 self._hurt(c["contact_damage"])
         if not c["boss_attacks"]:
