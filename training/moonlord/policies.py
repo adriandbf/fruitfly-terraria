@@ -252,10 +252,10 @@ class FlyPolicy:
     DIVE_UNTIL_VY = 6.0     # px/tick: falling this fast -> climb again
 
     ABOVE_PX = 60.0         # a threat this far above the fly's centre counts as "from above"
-    DIVE_ON_HZ = 40.0       # landing (DNp07) rate needed to dive
 
     def __init__(self, enc_params=None, dec_params=None, brain=None, readout_fn=None,
-                 threat_horizon_ticks=90, fly_flee=True, vertical="brain"):
+                 threat_horizon_ticks=90, fly_flee=True, vertical="brain",
+                 commit_ticks=0, dive_on_hz=40.0, waypoint=False, waypoint_px=600.0):
         root = Path(__file__).resolve().parents[2]
         for sub in ("brain", "interface"):
             if str(root / sub) not in sys.path:
@@ -274,6 +274,19 @@ class FlyPolicy:
         import neurons
         self.neurons = neurons
         self.last_vertical = None
+        # (1) direction commitment: once a flee direction is chosen, keep it for
+        # commit_ticks decisions unless the brain's evidence has reversed for
+        # that long too (live: the core sits right under the fly, so DNa02
+        # flipped tick to tick and the fly jittered in place). 0 = off.
+        self.commit_ticks = commit_ticks
+        # (3) landing (DNp07) rate needed to dive (live: >=40 Hz on 71% of ticks)
+        self.dive_on_hz = dive_on_hz
+        # (2) waypoint: show the approach (sugar) channel a pseudo "player" at a
+        # safe spot waypoint_px from the boss core, on the side the fly is on,
+        # so the brain's own approach steering pulls it away from the boss when
+        # it isn't fleeing. Hand-picked target; brain-driven steering.
+        self.waypoint, self.waypoint_px = waypoint, waypoint_px
+        self._commit_dir, self._commit_left, self._against = 0, 0, 0
         self.flee = decoder.StatefulDecoder(dec_params)
         self.last_drives = None
         self.last_threat = None
@@ -292,6 +305,7 @@ class FlyPolicy:
     def reset(self):
         self.flee.reset()
         self._diving = False
+        self._commit_dir, self._commit_left, self._against = 0, 0, 0
         if self.brain is not None and hasattr(self.brain, "reset_state"):
             self.brain.reset_state()
 
@@ -337,6 +351,21 @@ class FlyPolicy:
         threats = self._threats(state)
         return min(threats, key=lambda t: t[1])[0] if threats else None
 
+    def _commit(self, want):
+        """Direction commitment: keep the committed side for commit_ticks
+        decisions; switch only after the brain has wanted the other side for
+        commit_ticks decisions in a row (or the commitment has run out)."""
+        if self._commit_left > 0 and want != self._commit_dir:
+            self._against += 1
+            if self._against < self.commit_ticks:
+                self._commit_left -= 1
+                return {"left": self._commit_dir < 0, "right": self._commit_dir > 0}
+        if want != self._commit_dir or self._commit_left <= 0:
+            self._commit_dir, self._commit_left = want, self.commit_ticks
+        self._against = 0
+        self._commit_left -= 1
+        return {"left": want < 0, "right": want > 0}
+
     def urgent_by_elevation(self, state):
         """(most urgent threat from ABOVE, most urgent threat level/below)."""
         p = state.get("player") or {}
@@ -380,6 +409,12 @@ class FlyPolicy:
             threat = self.most_urgent(state)
             self.last_threat = threat
             seen["npcs"] = [threat] if threat else []   # attention: one threat, the most urgent
+        if self.waypoint:
+            core = next((n for n in state.get("npcs", []) if n.get("type") == 398), None)
+            if core is not None:
+                side = 1.0 if p.get("cx", p["x"]) >= core.get("cx", core["x"]) else -1.0
+                seen["players"] = [{"x": core.get("cx", core["x"]) + side * self.waypoint_px,
+                                    "y": p.get("y", 0.0), "name": "waypoint"}]
         self.last_drives = self.encoder.compute_drives(seen, self.enc_params)
         ids, rates = self.encoder.encode(seen, self.enc_params)
         spikes = self.brain.stimulate(list(ids) + list(extra_ids), list(rates) + list(extra_rates), duration_ms=100)
@@ -390,16 +425,21 @@ class FlyPolicy:
         sources = _sources(action, "brain")
 
         fleeing = self.flee.last_mode == "flee" and self.flee.last_flee_dir != 0
+        if self.commit_ticks and (action.get("left") or action.get("right")):
+            action = {**action, **self._commit(1 if action.get("right") else -1)}
         if self.vertical == "brain":
             n = self.neurons
             mean = lambda ids: sum(readout.get(f, 0.0) for f in ids) / max(len(ids), 1)
             land_l, land_r = mean(n.DNP07_LANDING_LEFT), mean(n.DNP07_LANDING_RIGHT)
             gf = mean(n.DNP01_JUMP)
             landing = max(land_l, land_r)
-            if landing >= self.DIVE_ON_HZ and landing > gf:
+            if landing >= self.dive_on_hz and landing > gf:
                 # Dive: DNp07 is ipsilateral (LPLC4_left -> DNp07_L), so go AWAY
-                # from the side whose DNp07 fires harder.
+                # from the side whose DNp07 fires harder -- unless a committed
+                # direction is running, which keeps its course.
                 go_right = land_l > land_r
+                if self.commit_ticks and self._commit_left > 0 and self._commit_dir:
+                    go_right = self._commit_dir > 0
                 action = {**RELEASE, "left": not go_right, "right": go_right, "down": True}
                 self.last_vertical = "dive"
             elif fleeing:

@@ -193,6 +193,13 @@ lp_ids, lp_rates = flyc._lplc4_drive(st_ab, above)
 check("LPLC4 channel is driven for a threat from above",
       set(lp_ids) <= set(neurons.LPLC4_LOOMING) and max(lp_rates) > 0, f"{len(lp_ids)} ids")
 
+# 8e. Direction commitment: a brief reversal is ignored, a sustained one is taken.
+flyk = policies.FlyPolicy(brain=StubBrain(), readout_fn=lambda _s: fake_rates, commit_ticks=4)
+flyk.reset()
+seq = [flyk._commit(w)["right"] for w in (1, -1, -1, 1, -1, -1, -1, -1, -1)]
+check("commitment: holds right through a 2-tick reversal, switches after 4",
+      seq[:4] == [True, True, True, True] and seq[-1] is False, str(seq))
+
 # 9. Whip assist: swings at the boss with aim, credited "assist", and the
 #    fly/scripted policies are never credited for `use`.
 class Spy(FakeMoonLordBridge):
