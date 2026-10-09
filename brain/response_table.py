@@ -193,21 +193,27 @@ def validate(table_path, points=60, engine=None, seed=1):
         ids, rates = _ids_rates(point)
         brain.stimulate(ids, rates, duration_ms=50)
         real = brain.stimulate(ids, rates, duration_ms=100)
+        again = brain.stimulate(ids, rates, duration_ms=100)  # noise floor: the engine against itself
         tab = tb.stimulate(ids, rates)
-        rows.append((point, summary(lambda f: brain.rate_for(real, f)), summary(lambda f: tb.rate_for(tab, f))))
-    gf_r = np.array([r["gf"] for _, r, _ in rows]); gf_t = np.array([t["gf"] for _, _, t in rows])
-    d7_r = np.array([r["dnp07"] for _, r, _ in rows]); d7_t = np.array([t["dnp07"] for _, _, t in rows])
-    a_r = np.array([r["dna02"] for _, r, _ in rows]); a_t = np.array([t["dna02"] for _, _, t in rows])
-    corr = lambda a, b: float(np.corrcoef(a, b)[0, 1]) if a.std() and b.std() else float("nan")
-    flee_agree = np.mean((gf_r >= 30) == (gf_t >= 30))
-    dive_agree = np.mean(((d7_r >= 40) & (d7_r > gf_r)) == ((d7_t >= 40) & (d7_t > gf_t)))
-    side_mask = (np.abs(a_r) > 5) | (np.abs(a_t) > 5)
-    side_agree = np.mean(np.sign(a_r[side_mask]) == np.sign(a_t[side_mask])) if side_mask.any() else float("nan")
-    res = {"points": points, "gf_corr": corr(gf_r, gf_t), "gf_mae_hz": float(np.abs(gf_r - gf_t).mean()),
-           "dnp07_corr": corr(d7_r, d7_t), "dnp07_mae_hz": float(np.abs(d7_r - d7_t).mean()),
-           "dna02_corr": corr(a_r, a_t), "flee_on30_agree": float(flee_agree),
-           "dive40_agree": float(dive_agree), "dna02_side_agree": float(side_agree)}
-    # Noise floor: the real engine against itself on the same points.
+        rows.append((point, summary(lambda f: brain.rate_for(real, f)), summary(lambda f: tb.rate_for(tab, f)),
+                     summary(lambda f: brain.rate_for(again, f))))
+    def compare(a_rows, b_rows):
+        g = lambda rs, k: np.array([r[k] for r in rs])
+        gf_r, gf_t = g(a_rows, "gf"), g(b_rows, "gf")
+        d7_r, d7_t = g(a_rows, "dnp07"), g(b_rows, "dnp07")
+        a_r, a_t = g(a_rows, "dna02"), g(b_rows, "dna02")
+        corr = lambda a, b: float(np.corrcoef(a, b)[0, 1]) if a.std() and b.std() else float("nan")
+        side_mask = (np.abs(a_r) > 5) | (np.abs(a_t) > 5)
+        return {"gf_corr": round(corr(gf_r, gf_t), 3), "gf_mae_hz": round(float(np.abs(gf_r - gf_t).mean()), 1),
+                "dnp07_corr": round(corr(d7_r, d7_t), 3), "dnp07_mae_hz": round(float(np.abs(d7_r - d7_t).mean()), 1),
+                "dna02_corr": round(corr(a_r, a_t), 3),
+                "flee_on30_agree": round(float(np.mean((gf_r >= 30) == (gf_t >= 30))), 3),
+                "dive40_agree": round(float(np.mean(((d7_r >= 40) & (d7_r > gf_r)) == ((d7_t >= 40) & (d7_t > gf_t)))), 3),
+                "dna02_side_agree": round(float(np.mean(np.sign(a_r[side_mask]) == np.sign(a_t[side_mask])))
+                                          if side_mask.any() else float("nan"), 3)}
+    real_rows = [r for _, r, _, _ in rows]
+    res = {"points": points, "table_vs_engine": compare(real_rows, [t for _, _, t, _ in rows]),
+           "engine_vs_itself": compare(real_rows, [a for _, _, _, a in rows])}
     print(json.dumps(res, indent=2))
     return res
 
