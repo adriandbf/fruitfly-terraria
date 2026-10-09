@@ -126,7 +126,7 @@ for f in neurons.DNP01_JUMP:
     fake_rates[f] = 120.0
 for f in neurons.DNA02_STEERING_LEFT:
     fake_rates[f] = 80.0
-fly = policies.FlyPolicy(brain=stub, readout_fn=lambda _spikes: fake_rates)
+fly = policies.FlyPolicy(brain=stub, readout_fn=lambda _spikes: fake_rates, vertical="rule")
 fly.reset()
 p = {"cx": 0.0, "cy": 0.0, "x": -10.0, "y": -21.0, "direction": 1, "dead": False}
 state = {"in_world": True, "player": p, "npcs": [], "players": [], "projectiles": [
@@ -152,7 +152,7 @@ urgent = fly.most_urgent(core_state)
 check("attention picks the bolt (20 ticks away) over the core", urgent and urgent.get("from_projectile") == 462, str(urgent))
 
 # 8c. Sawtooth: climbing fast switches to a dive; falling fast switches back.
-fly2 = policies.FlyPolicy(brain=StubBrain(), readout_fn=lambda _s: fake_rates)
+fly2 = policies.FlyPolicy(brain=StubBrain(), readout_fn=lambda _s: fake_rates, vertical="rule")
 fly2.reset()
 st_up = {**state, "player": {**p, "vy": -12.0}}
 a1, _ = fly2.act(st_up)
@@ -165,6 +165,33 @@ fly3.reset()
 a3, s3 = fly3.act(state)
 check("fly_flee=False leaves the decoder's own action, all credited 'brain'",
       all(v == "brain" for v in s3.values()) and not a3["down"], f"{a3} {s3}")
+
+# 8d. Vertical from the brain: landing (DNp07) beats the Giant Fiber -> dive away
+#     from the stronger DNp07 side; Giant Fiber alone -> climb. Threats split by height.
+land_rates = {f: 0.0 for f in neurons.ALL_DESCENDING}
+for f in neurons.DNP07_LANDING_LEFT:
+    land_rates[f] = 150.0
+for f in neurons.DNP01_JUMP:
+    land_rates[f] = 40.0
+flyb = policies.FlyPolicy(brain=StubBrain(), readout_fn=lambda _s: land_rates)
+flyb.reset()
+a, srcs = flyb.act(state)
+check("brain vertical: DNp07_L > Giant Fiber -> dive to the right",
+      a["down"] and a["right"] and not a["jump"] and set(srcs.values()) == {"brain"}, f"{a} {srcs}")
+flyc = policies.FlyPolicy(brain=StubBrain(), readout_fn=lambda _s: fake_rates)
+flyc.reset()
+a, srcs = flyc.act(state)
+check("brain vertical: Giant Fiber only -> climb (jump held), credited brain",
+      a["jump"] and not a["down"] and set(srcs.values()) == {"brain"}, f"{a} {srcs}")
+st_ab = {**state, "projectiles": [
+    {"type": 462, "cx": 0.0, "cy": -300.0, "vx": 0.0, "vy": 10.0, "width": 8, "height": 8, "damage": 70},
+    {"type": 462, "cx": 300.0, "cy": 0.0, "vx": -10.0, "vy": 0.0, "width": 8, "height": 8, "damage": 70}]}
+above, level = flyc.urgent_by_elevation(st_ab)
+check("threats split by height (above -> LPLC4, level -> LC4)",
+      above and above["y"] == -300.0 and level and level["y"] == 0.0, f"{above} {level}")
+lp_ids, lp_rates = flyc._lplc4_drive(st_ab, above)
+check("LPLC4 channel is driven for a threat from above",
+      set(lp_ids) <= set(neurons.LPLC4_LOOMING) and max(lp_rates) > 0, f"{len(lp_ids)} ids")
 
 # 9. Whip assist: swings at the boss with aim, credited "assist", and the
 #    fly/scripted policies are never credited for `use`.

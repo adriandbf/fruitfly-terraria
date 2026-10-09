@@ -383,7 +383,8 @@ def run_episode(bridge, policy, cfg, episode_seed, log_file=None):
             ledger[w] = ledger.get(w, 0) + 1
         log({"phase": "play", "tick": tick, "elapsed_s": elapsed, "action": action, "sources": sources,
              "state": _trim_state(st),
-             "drives": getattr(policy, "last_drives", None)})
+             "drives": getattr(policy, "last_drives", None),
+             "vertical": getattr(policy, "last_vertical", None), "dn": getattr(policy, "last_dn", None)})
         tick += 1
         clock.end_tick()
 
@@ -451,6 +452,9 @@ def main(argv=None):
     ap.add_argument("--loadout", default=str(LOADOUT), help="loadout file (default training/moonlord/loadout.json)")
     ap.add_argument("--no-fly-flee", action="store_true",
                     help="fly policy without the flee-by-flying rule (ablation: brain/decoder movement only)")
+    ap.add_argument("--fly-vertical", choices=["brain", "rule", "off"], default=None,
+                    help="fly climb/dive source: brain (LC4->Giant Fiber climb, LPLC4->DNp07 dive; default), "
+                         "rule (hand sawtooth), off")
     ap.add_argument("--no-heal", action="store_true", help="don't drink healing potions (scripted assist)")
     ap.add_argument("--no-whip-assist", action="store_true", help="don't swing the whip (scripted assist)")
     ap.add_argument("--no-loadout-buffs", action="store_true", help="don't re-apply the loadout's buffs each episode")
@@ -510,6 +514,8 @@ def main(argv=None):
         kw = {"enc_params": data.get("encoder"), "dec_params": data.get("decoder")}
     if args.policy == "fly" and args.no_fly_flee:
         kw["fly_flee"] = False
+    if args.policy == "fly" and args.fly_vertical:
+        kw["vertical"] = args.fly_vertical
     if args.policy == "scripted":
         # Keep the scripted dodger inside the built arena (90% of its half-width).
         a = loadout.get("arena", {})
@@ -533,6 +539,8 @@ def main(argv=None):
             row["run"] = stamp
             if args.policy == "fly" and args.no_fly_flee:
                 row["variant"] = "no_fly_flee"
+            elif args.policy == "fly":
+                row["variant"] = f"vertical_{args.fly_vertical or 'brain'}"
             rows.append(row)
             # Fake-bridge runs go to their own file so they never mix with real fights.
             with open(LOG_DIR / ("results_fake.jsonl" if args.fake else "results.jsonl"), "a") as f:

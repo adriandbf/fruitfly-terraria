@@ -251,8 +251,11 @@ class FlyPolicy:
     CLIMB_UNTIL_VY = -9.0   # px/tick: climbing this fast -> start the dive
     DIVE_UNTIL_VY = 6.0     # px/tick: falling this fast -> climb again
 
+    ABOVE_PX = 60.0         # a threat this far above the fly's centre counts as "from above"
+    DIVE_ON_HZ = 40.0       # landing (DNp07) rate needed to dive
+
     def __init__(self, enc_params=None, dec_params=None, brain=None, readout_fn=None,
-                 threat_horizon_ticks=90, fly_flee=True):
+                 threat_horizon_ticks=90, fly_flee=True, vertical="brain"):
         root = Path(__file__).resolve().parents[2]
         for sub in ("brain", "interface"):
             if str(root / sub) not in sys.path:
@@ -264,6 +267,13 @@ class FlyPolicy:
         self.brain, self.readout_fn = brain, readout_fn
         self.threat_horizon = threat_horizon_ticks
         self.fly_flee = fly_flee
+        # vertical: "brain" = climb/dive from the connectome (LC4 -> Giant Fiber
+        # = climb, LPLC4 -> DNp07 landing = dive; M3, 2026-10-09); "rule" = the
+        # hand-written sawtooth; "off" = neither (decoder only).
+        self.vertical = vertical if fly_flee else "off"
+        import neurons
+        self.neurons = neurons
+        self.last_vertical = None
         self.flee = decoder.StatefulDecoder(dec_params)
         self.last_drives = None
         self.last_threat = None
@@ -325,18 +335,47 @@ class FlyPolicy:
         threats = self._threats(state)
         return min(threats, key=lambda t: t[1])[0] if threats else None
 
+    def urgent_by_elevation(self, state):
+        """(most urgent threat from ABOVE, most urgent threat level/below)."""
+        p = state.get("player") or {}
+        pcy = p.get("cy", p.get("y", 0.0))
+        above = [t for t in self._threats(state) if t[0]["y"] < pcy - self.ABOVE_PX]
+        level = [t for t in self._threats(state) if t[0]["y"] >= pcy - self.ABOVE_PX]
+        pick = lambda ts: min(ts, key=lambda t: t[1])[0] if ts else None
+        return pick(above), pick(level)
+
+    def _lplc4_drive(self, state, threat):
+        """LPLC4 ids/rates for a threat from above: same distance->rate and
+        left/right split as the encoder's LC4 channel."""
+        if threat is None:
+            return [], []
+        enc, n = self.encoder, self.neurons
+        prm = {**enc.DEFAULT_PARAMS, **(self.enc_params or {})}
+        p = state["player"]
+        dist = math.hypot(threat["x"] - p.get("cx", p["x"]), threat["y"] - p.get("cy", p["y"]))
+        rate = enc._range_rate(dist, prm["threat_max_range_px"], prm["max_rate_hz"])
+        side = "right" if threat["x"] >= p.get("cx", p["x"]) else "left"
+        return enc._lateralized(rate, side, n.LPLC4_LOOMING_LEFT, n.LPLC4_LOOMING_RIGHT, prm["contra_fraction"])
+
     def act(self, state):
         p = state.get("player") or {}
         if not state.get("in_world") or p.get("dead"):
             return dict(RELEASE), {}
         self._ensure_brain()
-        threat = self.most_urgent(state)
-        self.last_threat = threat
         seen = dict(state)
-        seen["npcs"] = [threat] if threat else []   # attention: one threat, the most urgent
+        extra_ids, extra_rates = [], []
+        if self.vertical == "brain":
+            above, level = self.urgent_by_elevation(state)
+            self.last_threat = {"above": above, "level": level}
+            seen["npcs"] = [level] if level else []          # LC4 channel: level/below threat
+            extra_ids, extra_rates = self._lplc4_drive(state, above)  # LPLC4 channel: threat from above
+        else:
+            threat = self.most_urgent(state)
+            self.last_threat = threat
+            seen["npcs"] = [threat] if threat else []   # attention: one threat, the most urgent
         self.last_drives = self.encoder.compute_drives(seen, self.enc_params)
         ids, rates = self.encoder.encode(seen, self.enc_params)
-        spikes = self.brain.stimulate(ids, rates, duration_ms=100)
+        spikes = self.brain.stimulate(list(ids) + list(extra_ids), list(rates) + list(extra_rates), duration_ms=100)
         readout = self.readout_fn(spikes)
         a = self.flee.decode(readout, p.get("direction", 1))
         action = {**RELEASE, "left": bool(a.get("left")), "right": bool(a.get("right")),
@@ -344,7 +383,26 @@ class FlyPolicy:
         sources = _sources(action, "brain")
 
         fleeing = self.flee.last_mode == "flee" and self.flee.last_flee_dir != 0
-        if self.fly_flee and fleeing:
+        if self.vertical == "brain":
+            n = self.neurons
+            mean = lambda ids: sum(readout.get(f, 0.0) for f in ids) / max(len(ids), 1)
+            land_l, land_r = mean(n.DNP07_LANDING_LEFT), mean(n.DNP07_LANDING_RIGHT)
+            gf = mean(n.DNP01_JUMP)
+            landing = max(land_l, land_r)
+            if landing >= self.DIVE_ON_HZ and landing > gf:
+                # Dive: DNp07 is ipsilateral (LPLC4_left -> DNp07_L), so go AWAY
+                # from the side whose DNp07 fires harder.
+                go_right = land_l > land_r
+                action = {**RELEASE, "left": not go_right, "right": go_right, "down": True}
+                self.last_vertical = "dive"
+            elif fleeing:
+                action = {**action, "jump": True}   # takeoff wins: keep climbing
+                self.last_vertical = "climb"
+            else:
+                self.last_vertical = None
+            self.last_dn = {"gf": round(gf, 1), "dnp07_l": round(land_l, 1), "dnp07_r": round(land_r, 1)}
+            return action, _sources(action, "brain")
+        if self.vertical == "rule" and fleeing:
             vy = p.get("vy", 0.0)
             if self._diving and vy >= self.DIVE_UNTIL_VY:
                 self._diving = False
