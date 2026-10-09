@@ -51,18 +51,44 @@ import fly_params  # noqa: E402
 PARAMS_DIR = HERE / "params"
 LOG_DIR = ROOT / "logs" / "moonlord"
 TRAIN_SEED0, HELDOUT_SEED0 = 1000, 5000
+_FF = HERE / "fake_fit.json"
+FAKE_FIT_STAMP = json.loads(_FF.read_text()).get("fitted") if _FF.exists() else None
 
 _W = {}  # per-worker state: brain, readout, cfg, fake overrides
 
 
-def _init_worker(engine, null, table, brain_seed, fake_cfg, whip_strategy, max_seconds, vertical):
+# Domain randomization: every training fight gets its own boss, each of these
+# scaled by U(1-r, 1+r) (seeded by the fight seed, so it's the same boss for
+# every candidate). Stops the search from leaning on one exact fake detail
+# (2026-10-09: it parked the fly beside the fake's motionless hand).
+RANDOMIZE_KEYS = ["boss_drift", "hand_speed", "hand_in", "hand_out", "eye_turn", "eye_speed", "eye_period",
+                  "bolt_speed", "bolt_period", "bolt_lead", "sphere_speed", "sphere_period", "contact_radius",
+                  "dps_near", "regen_per_s"]
+
+
+def randomized(fake_cfg, seed, r):
+    if not r:
+        return fake_cfg
+    import random
+    from fake_bridge import DEFAULT_CONFIG, FITTED
+    base = {**DEFAULT_CONFIG, **FITTED, **fake_cfg}
+    rng = random.Random(seed * 7919 + 13)
+    out = dict(fake_cfg)
+    for k in RANDOMIZE_KEYS:
+        v = base[k] * rng.uniform(1 - r, 1 + r)
+        out[k] = int(round(v)) if isinstance(base[k], int) else v
+    out["hand_in"] = min(out["hand_in"], out["hand_out"] - 50)
+    return out
+
+
+def _init_worker(engine, null, table, brain_seed, fake_cfg, whip_strategy, max_seconds, vertical, randomize=0.0):
     import harness
     from brain_backend import make_brain
     brain, readout = make_brain(engine, null, seed=brain_seed, table_path=table)
     loadout = json.loads((HERE / "loadout.json").read_text())
     cfg = harness.config_from_loadout(loadout, "fight", whip_strategy)
     cfg["max_seconds"] = {"fight": max_seconds}
-    _W.update(brain=brain, readout=readout, cfg=cfg, fake=fake_cfg or {}, vertical=vertical)
+    _W.update(brain=brain, readout=readout, cfg=cfg, fake=fake_cfg or {}, vertical=vertical, randomize=randomize)
 
 
 def _episode(job):
@@ -75,7 +101,7 @@ def _episode(job):
     brain = _W["brain"]
     brain.reset_state(seed=seed)
     pol = FlyPolicy(brain=brain, readout_fn=_W["readout"], **fly_params.policy_kwargs(params, _W["vertical"]))
-    bridge = FakeMoonLordBridge({"seed": seed, **_W["fake"]})
+    bridge = FakeMoonLordBridge({"seed": seed, **randomized(_W["fake"], seed, _W["randomize"])})
     row = harness.run_episode(bridge, pol, _W["cfg"], seed)
     frac = row.get("boss_parts_frac_left")
     return (1.0 - frac if frac is not None else 0.0), row["seconds"], row["outcome"]
@@ -84,7 +110,7 @@ def _episode(job):
 class Evaluator:
     def __init__(self, args):
         init = (args.engine, args.null, args.table, args.brain_seed, _fake_cfg(args),
-                args.whip_strategy, args.max_seconds, args.vertical)
+                args.whip_strategy, args.max_seconds, args.vertical, args.randomize)
         if args.workers > 1:
             self.pool = mp.get_context("spawn").Pool(args.workers, _init_worker, init)
             self.map = self.pool.map
@@ -199,7 +225,8 @@ def train(args):
     fly_params.save(out, params, engine=args.engine, null=args.null, table=args.table, picked=pick,
                     train_seeds=len(train_seeds), heldout_seeds=len(held_seeds),
                     generations=args.generations, popsize=args.popsize, fake_config=_fake_cfg(args),
-                    whip_strategy=args.whip_strategy, max_seconds=args.max_seconds,
+                    whip_strategy=args.whip_strategy, max_seconds=args.max_seconds, randomize=args.randomize,
+                    fake_fit=FAKE_FIT_STAMP,
                     train_progress_defaults=base[0]["progress"], train_progress_best=best["progress"],
                     heldout={k: {kk: v[kk] for kk in ("progress", "seconds", "wins")} for k, v in held.items()},
                     history=_rel(hist_path), finished=time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -226,6 +253,8 @@ def main(argv=None):
     ap.add_argument("--vertical", default="brain", choices=["brain", "rule"])
     ap.add_argument("--whip-strategy", default="balanced", choices=["nearest", "balanced"])
     ap.add_argument("--fake-config", default=None, help='JSON overrides for fake_bridge, e.g. \'{"minion_dps": 2000}\'')
+    ap.add_argument("--randomize", type=float, default=0.15,
+                    help="per-fight boss variation, +-fraction (0 = the exact fitted fake)")
     ap.add_argument("--init", default=None, help="params file to start from (e.g. imitate.py's)")
     ap.add_argument("--rescore", default=None, help="score this params file vs defaults on held-out seeds, no search")
     ap.add_argument("--name", default=None)
