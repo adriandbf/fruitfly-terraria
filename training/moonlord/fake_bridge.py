@@ -25,6 +25,9 @@ import random
 import movement
 
 TICKS_PER_S = 60
+PART_OFFSET = {"hand_l": (-400.0, -150.0), "hand_r": (400.0, -150.0), "head": (0.0, -400.0), "core": (0.0, 0.0)}
+PART_TYPE = {"hand_l": 397, "hand_r": 397, "head": 396, "core": 398}
+TRUE_EYE = 400
 SUBSTEPS = 6  # game ticks per set_action (10 Hz decisions)
 
 # Projectile type ids (real Terraria ProjectileID values).
@@ -58,7 +61,16 @@ DEFAULT_CONFIG = {
     "immune_ticks": 40,           # Terraria's standard post-hit immunity
     "respawn_ticks": 300,
     # Boss
-    "boss_hp": 217500,
+    "boss_hp": 217500,            # total of the parts below
+    # Per-part model (2026-10-09): live HP of each part; the core can't be hurt
+    # until all three eyes are destroyed; each destroyed eye becomes a True Eye
+    # of Cthulhu that keeps shooting. Live (10 fights with True Eyes): damage
+    # taken 14.5/s with none -> 26.0/s with one (+80%), mostly extra Phantasmal
+    # Eyes; a destroyed part keeps its own attacks here. Minion damage goes to
+    # the whip-tagged part (the one nearest the aim point) or else the nearest
+    # hittable part, like summon targeting in the game.
+    "part_hp": {"head": 67500, "hand_l": 37500, "hand_r": 37500, "core": 75000},
+    "true_eye_period": 100, "true_eye_shots": 3,   # homing Phantasmal Eyes per volley, per True Eye
     "minion_dps": 1658.0,         # measured, no whip
     # Live 2026-10-09 (random/scripted/human fights): the boss CHASES -- its core
     # moves ~8 px/tick (as fast as the player flies) and sits ~130 px BELOW
@@ -207,8 +219,8 @@ class FakeMoonLordBridge:
         if t != MOON_LORD_CORE:
             return {"ok": False, "error": "fake bridge only models the Moon Lord"}
         cx = self.px + self.cfg["player_w"] / 2
-        self.boss = {"cx": cx, "cy": self.py - self.cfg["boss_height"], "hp": self.cfg["boss_hp"],
-                     "ray": None}
+        self.boss = {"cx": cx, "cy": self.py - self.cfg["boss_height"], "ray": None,
+                     "parts": dict(self.cfg["part_hp"]), "destroyed": []}
         return {"ok": True, "type": t}
 
     def _cmd_spawn_projectile(self, p):
@@ -238,16 +250,19 @@ class FakeMoonLordBridge:
         npcs = []
         if self.boss:
             b = self.boss
-            for t, name, dx, dy in ((397, "Moon Lord's Hand", -400.0, -150.0), (397, "Moon Lord's Hand", 400.0, -150.0),
-                                    (396, "Moon Lord", 0.0, -400.0)):
-                npcs.append({"type": t, "name": name, "x": b["cx"] + dx - 23, "y": b["cy"] + dy - 33,
+            for name, (dx, dy) in PART_OFFSET.items():
+                dead = name in b["destroyed"]
+                hp = c["part_hp"][name] if dead else b["parts"][name]  # like the game: a destroyed eye reads full hp
+                npcs.append({"type": PART_TYPE[name], "name": name, "x": b["cx"] + dx - 23, "y": b["cy"] + dy - 33,
                              "cx": b["cx"] + dx, "cy": b["cy"] + dy, "vx": 0.0, "vy": 0.0, "width": 46, "height": 66,
-                             "hp": 1, "max_hp": 1, "hostile": True, "boss": False, "moon_lord_part": True,
-                             "dont_take_damage": True})
-            npcs.append({"type": MOON_LORD_CORE, "name": "Moon Lord", "x": b["cx"] - 60, "y": b["cy"] - 60,
-                         "cx": b["cx"], "cy": b["cy"], "vx": 0.0, "vy": 0.0, "width": 120, "height": 120,
-                         "hp": int(b["hp"]), "max_hp": c["boss_hp"], "hostile": True, "boss": True,
-                         "moon_lord_part": True, "dont_take_damage": False})
+                             "hp": int(hp), "max_hp": c["part_hp"][name], "hostile": True, "boss": name == "core",
+                             "moon_lord_part": True, "dont_take_damage": dead or not self._hittable(name)})
+            for name in b["destroyed"]:
+                dx, dy = PART_OFFSET[name]
+                npcs.append({"type": TRUE_EYE, "name": "True Eye of Cthulhu", "x": b["cx"] + dx, "y": b["cy"] + dy - 60,
+                             "cx": b["cx"] + dx, "cy": b["cy"] + dy - 60, "vx": 0.0, "vy": 0.0, "width": 30,
+                             "height": 30, "hp": 200, "max_hp": 200, "hostile": True, "boss": False,
+                             "moon_lord_part": False, "dont_take_damage": True})
         projs = []
         for pr in self.projs:
             projs.append({"type": pr.type, "cx": pr.x, "cy": pr.y, "vx": pr.vx, "vy": pr.vy,
@@ -348,12 +363,18 @@ class FakeMoonLordBridge:
         b["cx"] += max(-c["boss_drift"], min(c["boss_drift"], pcx - b["cx"]))
         b["cy"] += max(-c["boss_drift"], min(c["boss_drift"], (pcy - c["boss_height"]) - b["cy"]))
         if self.minions > 0:
-            whip = self.whip_bonus if (self.action.get("use") and self._whip_selected()) else 1.0
-            b["hp"] -= c["minion_dps"] * whip * self.minions / max(self.max_minions, 1) / TICKS_PER_S
-        if b["hp"] <= 0:
-            self.boss, self.boss_killed, self.boss_kill_tick = None, True, self.ticks
-            self.projs = [p for p in self.projs if p.type != PHANTASMAL_DEATHRAY]
-            return
+            whipping = self.action.get("use") and self._whip_selected()
+            whip = self.whip_bonus if whipping else 1.0
+            target = self._minion_target(pcx, pcy, self.aim if whipping else None)
+            if target:
+                b["parts"][target] -= c["minion_dps"] * whip * self.minions / max(self.max_minions, 1) / TICKS_PER_S
+                if b["parts"][target] <= 0:
+                    if target == "core":
+                        self.boss, self.boss_killed, self.boss_kill_tick = None, True, self.ticks
+                        self.projs = [p for p in self.projs if p.type != PHANTASMAL_DEATHRAY]
+                        return
+                    b["parts"][target] = 0
+                    b["destroyed"].append(target)
         # Contact: core, both hands and the head (live: head contact was a top
         # hit source for the scripted dodger once it kept farther from the core).
         for bx, by in ((b["cx"], b["cy"]), (b["cx"] - 400.0, b["cy"] - 150.0), (b["cx"] + 400.0, b["cy"] - 150.0),
@@ -365,19 +386,26 @@ class FakeMoonLordBridge:
         t = self.ticks
         head = (b["cx"], b["cy"] - 400.0)
         hands = ((b["cx"] - 400.0, b["cy"] - 150.0), (b["cx"] + 400.0, b["cy"] - 150.0))
-        if t % c["bolt_period"] == 0:
-            hx, hy = self.rng.choice(hands)
+        alive_hands, head_alive = hands, True  # destroyed parts keep attacking (see part_hp note)
+        for nm in b["destroyed"]:
+            if t % c["true_eye_period"] == 0:
+                dx, dy = PART_OFFSET[nm]
+                for _ in range(c["true_eye_shots"]):
+                    self._aimed(PHANTASMAL_EYE, b["cx"] + dx, b["cy"] + dy - 60, c["eye_speed"], c["eye_damage"],
+                                spread=0.8, homing=c["eye_turn"], life=c["eye_life"])
+        if alive_hands and t % c["bolt_period"] == 0:
+            hx, hy = self.rng.choice(alive_hands)
             for _ in range(c["bolt_count"]):
                 self._aimed(PHANTASMAL_BOLT, hx, hy, c["bolt_speed"], c["bolt_damage"], spread=0.12)
-        if t % c["sphere_period"] == 0:
-            hx, hy = self.rng.choice(hands)
+        if alive_hands and t % c["sphere_period"] == 0:
+            hx, hy = self.rng.choice(alive_hands)
             for _ in range(c["sphere_count"]):
                 self._aimed(PHANTASMAL_SPHERE, hx, hy, c["sphere_speed"], c["sphere_damage"], spread=0.35)
-        if t % c["eye_period"] == 0:
+        if head_alive and t % c["eye_period"] == 0:
             for _ in range(3):
                 self._aimed(PHANTASMAL_EYE, head[0] + self.rng.uniform(-200, 200), head[1],
                             c["eye_speed"], c["eye_damage"], spread=0.8, homing=c["eye_turn"], life=c["eye_life"])
-        if t >= c["ray_first"] and (t - c["ray_first"]) % c["ray_period"] == 0:
+        if head_alive and t >= c["ray_first"] and (t - c["ray_first"]) % c["ray_period"] == 0:
             hy = b["cy"] - 400.0
             ang = math.atan2(pcy - hy, pcx - b["cx"]) - c["ray_sweep"] / 2 * self.rng.choice((-1, 1))
             ray = _Proj(PHANTASMAL_DEATHRAY, b["cx"], b["cy"] - 400.0, math.cos(ang), math.sin(ang), c["ray_damage"],
@@ -385,6 +413,24 @@ class FakeMoonLordBridge:
             ray.angle = ang
             ray.omega = c["ray_sweep"] / c["ray_duration"] * (1 if (ang < math.atan2(pcy - hy, pcx - b["cx"])) else -1)
             self.projs.append(ray)
+
+    def _hittable(self, name):
+        b = self.boss
+        if name in b["destroyed"]:
+            return False
+        if name == "core":
+            return len(b["destroyed"]) >= 3
+        return True
+
+    def _minion_target(self, pcx, pcy, aim):
+        """Part the minions hit: the hittable part nearest the whip's aim
+        point (whip tag), else the hittable part nearest the player."""
+        b = self.boss
+        cand = [n for n in PART_OFFSET if self._hittable(n)]
+        if not cand:
+            return None
+        ox, oy = aim if aim else (pcx, pcy)
+        return min(cand, key=lambda n: (b["cx"] + PART_OFFSET[n][0] - ox) ** 2 + (b["cy"] + PART_OFFSET[n][1] - oy) ** 2)
 
     def _aimed(self, type_, x, y, speed, damage, spread=0.0, homing=0.0, life=600):
         pcx, pcy = self._centre()
