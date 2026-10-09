@@ -113,6 +113,21 @@ default; spheres and eyes may misbehave when spawned without the boss).
 - In single player the game pauses when its window is unfocused, so
   `--keep-focus` now also forces FNA's `Game.IsActive` back on. Untested.
 
+## Recording your own play
+
+`python training/moonlord/harness.py --policy human` starts a normal fight:
+reset, potions, minions and buffs, then a 3-second countdown, then the
+Moon Lord. You steer with your own keyboard; the mod is in passthrough mode
+and only adds the whip assist and heal assist. Every tick is logged with
+the keys you held, in the same format as every other policy and credited
+`human`, so `report.py` shows you as a baseline. Useful flags:
+
+- `--no-whip-assist`: swing the whip yourself.
+- `--no-heal`: drink potions yourself (H).
+- `--mode free --max-seconds 60`: no boss, just record a movement
+  technique.
+- `--episodes 3`: record several attempts in a row.
+
 ## Next live batch
 
 `bash training/moonlord/run_batch.sh` runs, unattended:
