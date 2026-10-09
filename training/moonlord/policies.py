@@ -255,7 +255,8 @@ class FlyPolicy:
 
     def __init__(self, enc_params=None, dec_params=None, brain=None, readout_fn=None,
                  threat_horizon_ticks=90, fly_flee=True, vertical="brain",
-                 commit_ticks=0, dive_on_hz=40.0, waypoint=False, waypoint_px=600.0):
+                 commit_ticks=0, dive_on_hz=40.0, waypoint=False, waypoint_px=600.0,
+                 above_px=None):
         root = Path(__file__).resolve().parents[2]
         for sub in ("brain", "interface"):
             if str(root / sub) not in sys.path:
@@ -266,6 +267,8 @@ class FlyPolicy:
         self.enc_params, self.dec_params = enc_params, dec_params
         self.brain, self.readout_fn = brain, readout_fn
         self.threat_horizon = threat_horizon_ticks
+        if above_px is not None:
+            self.ABOVE_PX = float(above_px)
         self.fly_flee = fly_flee
         # vertical: "brain" = climb/dive from the connectome (LC4 -> Giant Fiber
         # = climb, LPLC4 -> DNp07 landing = dive; M3, 2026-10-09); "rule" = the

@@ -461,6 +461,27 @@ def _mean_frac(rows):
     return f"{100 * sum(fr) / len(fr):.0f}%" if fr else "n/a"
 
 
+def config_from_loadout(loadout, mode="fight", whip_strategy=None, buffs=True, heal=True, whip_assist=True):
+    """Episode config for run_episode from loadout.json (shared by main()
+    and the offline trainers, so they fight exactly the same fight)."""
+    cfg = json.loads(json.dumps(DEFAULTS))
+    cfg["mode"] = mode
+    cfg["summon_slots"] = list(loadout.get("summon_slots", []))
+    cfg["arena"] = loadout.get("arena")
+    for k in ("heal_at_hp", "restock_potions", "heal_potion"):
+        if k in loadout:
+            cfg[k] = loadout[k]
+    if not heal:
+        cfg["heal_at_hp"] = 0
+    cfg["whip_slot"] = loadout.get("whip_slot")
+    cfg["whip_strategy"] = whip_strategy or loadout.get("whip_strategy", "nearest")
+    cfg["whip_assist"] = bool(loadout.get("whip_assist")) and whip_assist
+    if buffs:
+        cfg["buffs"] = list(loadout.get("buffs", []))
+        cfg["buff_seconds"] = loadout.get("buff_seconds", cfg["buff_seconds"])
+    return cfg
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--policy", default="idle", choices=["idle", "random", "scripted", "fly", "human"])
@@ -494,7 +515,7 @@ def main(argv=None):
                     help="which Moon Lord part the whip assist tags (minions follow the tag)")
     ap.add_argument("--no-whip-assist", action="store_true", help="don't swing the whip (scripted assist)")
     ap.add_argument("--no-loadout-buffs", action="store_true", help="don't re-apply the loadout's buffs each episode")
-    ap.add_argument("--params-file", default=None, help="tuned encoder/decoder params for --policy fly")
+    ap.add_argument("--params-file", default=None, help="tuned params JSON for --policy fly (encoder/decoder/policy blocks, from train_fly_cma.py or imitate.py)")
     ap.add_argument("--gym-types", default=None, help="projectile type ids for gym volleys, e.g. 462,454,452")
     ap.add_argument("--fake", action="store_true", help="use the offline fake bridge instead of the game")
     ap.add_argument("--no-log", action="store_true", help="don't write per-tick logs (summaries still written)")
@@ -520,26 +541,15 @@ def main(argv=None):
         bridge.close()
         return []
 
-    cfg = json.loads(json.dumps(DEFAULTS))
-    cfg["mode"] = args.mode
+    cfg = config_from_loadout(loadout, args.mode, args.whip_strategy,
+                              buffs=not args.no_loadout_buffs, heal=not args.no_heal,
+                              whip_assist=not args.no_whip_assist)
     if args.max_seconds:
         cfg["max_seconds"] = {args.mode: args.max_seconds}
-    cfg["summon_slots"] = ([int(s) for s in args.summon_slots.split(",") if s.strip()]
-                           if args.summon_slots else list(loadout.get("summon_slots", [])))
+    if args.summon_slots:
+        cfg["summon_slots"] = [int(s) for s in args.summon_slots.split(",") if s.strip()]
     if args.policy == "human":
         cfg["countdown_s"] = 3  # time to put your hands on the keyboard
-    cfg["arena"] = loadout.get("arena")
-    for k in ("heal_at_hp", "restock_potions", "heal_potion"):
-        if k in loadout:
-            cfg[k] = loadout[k]
-    if args.no_heal:
-        cfg["heal_at_hp"] = 0
-    cfg["whip_slot"] = loadout.get("whip_slot")
-    cfg["whip_strategy"] = args.whip_strategy or loadout.get("whip_strategy", "nearest")
-    cfg["whip_assist"] = bool(loadout.get("whip_assist")) and not args.no_whip_assist
-    if not args.no_loadout_buffs:
-        cfg["buffs"] = list(loadout.get("buffs", []))
-        cfg["buff_seconds"] = loadout.get("buff_seconds", cfg["buff_seconds"])
     if args.gym_types:
         cfg["gym_types"] = [int(s) for s in args.gym_types.split(",") if s.strip()]
     if args.keep_focus:
@@ -555,6 +565,9 @@ def main(argv=None):
         kw["vertical"] = args.fly_vertical
     if args.policy == "fly":
         kw.update(commit_ticks=args.fly_commit, dive_on_hz=args.fly_dive_hz, waypoint=args.fly_waypoint)
+    if args.policy == "fly" and args.params_file:
+        # Tuned FlyPolicy knobs (train_fly_cma.py / imitate.py) win over the CLI defaults.
+        kw.update(data.get("policy") or {})
     if args.policy == "scripted":
         # Keep the scripted dodger inside the built arena (90% of its half-width).
         a = loadout.get("arena", {})
@@ -579,6 +592,8 @@ def main(argv=None):
             row["whip_strategy"] = cfg["whip_strategy"]
             if args.policy == "fly" and args.no_fly_flee:
                 row["variant"] = "no_fly_flee"
+            elif args.policy == "fly" and args.params_file:
+                row["variant"] = "tuned_" + Path(args.params_file).stem
             elif args.policy == "fly":
                 row["variant"] = (f"vertical_{args.fly_vertical or 'brain'}"
                                   + (f"_commit{args.fly_commit}" if args.fly_commit else "")
