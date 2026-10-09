@@ -67,6 +67,8 @@ DEFAULTS = {
     "heal_potion": "SuperHealingPotion",
     "whip_slot": None,           # hotbar slot of the whip
     "whip_assist": False,        # scripted whip swings at the Moon Lord (credited "assist", never "brain")
+    "whip_strategy": "nearest",  # nearest | balanced (hands to hold_frac, head, hands, core)
+    "whip_hold_frac": 0.15,
     "buffs": [],                 # buff names re-applied at every reset (potions; furniture buffs come from the arena)
     "buff_seconds": 900,
     "summon_hold_ticks": 120,    # up to 12 s of `use` per slot; stops as soon as the minion slots are full
@@ -235,18 +237,46 @@ def moon_lord_progress(state):
     return {"hp_left": left, "hp_total": total, "eyes_destroyed": destroyed}
 
 
-def whip_target(state):
-    """The Moon Lord part a whip swing should aim at: the nearest part that
-    can currently take damage (eyes before the core opens), else the
-    nearest part. Returns (x, y) world pixels or None."""
+def _alive_eyes(state):
+    """Head/hand eye parts not yet destroyed (destroyed ones read FULL hp and
+    have a True Eye; see moon_lord_progress)."""
+    npcs = state.get("npcs", [])
+    eyes = [n for n in npcs if n.get("type") in (MOON_LORD_HEAD, MOON_LORD_HAND)]
+    destroyed = min(len(eyes), sum(1 for n in npcs if n.get("type") == TRUE_EYE))
+    return sorted(eyes, key=lambda n: n.get("hp", 0))[:len(eyes) - destroyed]
+
+
+def whip_target(state, strategy="nearest", hold_frac=0.15):
+    """The Moon Lord part a whip swing should aim at. Minions attack the
+    whip-tagged enemy, so this chooses where all the summon damage goes.
+      nearest:  the nearest part that can take damage (the original assist)
+      balanced: the player's strategy (user, 2026-10-09) -- bring the HAND
+                eyes down to hold_frac of their hp but don't destroy them
+                (a destroyed eye becomes a True Eye and the damage coming at
+                you jumps), destroy the HEAD eye, then finish the hands, then
+                the core. Falls back down the list when a part can't be hit.
+    Returns (x, y) world pixels or None."""
     p = state.get("player") or {}
     px, py = p.get("cx", p.get("x", 0.0)), p.get("cy", p.get("y", 0.0))
     parts = [n for n in state.get("npcs", []) if n.get("moon_lord_part") or n.get("boss")]
     if not parts:
         return None
     hittable = [n for n in parts if not n.get("dont_take_damage")] or parts
-    best = min(hittable, key=lambda n: (n.get("cx", n["x"]) - px) ** 2 + (n.get("cy", n["y"]) - py) ** 2)
-    return best.get("cx", best["x"]), best.get("cy", best["y"])
+    xy = lambda n: (n.get("cx", n["x"]), n.get("cy", n["y"]))
+    nearest = min(hittable, key=lambda n: (xy(n)[0] - px) ** 2 + (xy(n)[1] - py) ** 2)
+    if strategy != "balanced":
+        return xy(nearest)
+    alive = _alive_eyes(state)
+    frac = lambda n: n.get("hp", 0) / max(n.get("max_hp", 1), 1)
+    hands = sorted([n for n in alive if n.get("type") == MOON_LORD_HAND], key=frac, reverse=True)
+    head = [n for n in alive if n.get("type") == MOON_LORD_HEAD]
+    core = [n for n in parts if n.get("type") == MOON_LORD_CORE]
+    order = ([h for h in hands if frac(h) > hold_frac] + head
+             + sorted(hands, key=frac) + core)
+    for n in order:
+        if not n.get("dont_take_damage"):
+            return xy(n)
+    return xy(nearest)
 
 
 def spawn_boss(bridge, clock, boss_type, timeout_s):
@@ -365,7 +395,7 @@ def run_episode(bridge, policy, cfg, episode_seed, log_file=None):
         # Whip assist: scripted, NOT the fly. Swings at the boss whenever
         # one is up; the policy's own `use` is ignored while it's on.
         if cfg.get("whip_assist") and cfg.get("whip_slot") is not None:
-            target = whip_target(st)
+            target = whip_target(st, cfg.get("whip_strategy", "nearest"), cfg.get("whip_hold_frac", 0.15))
             if target is not None:
                 payload.update(use=True, aim_x=target[0], aim_y=target[1])
                 sources = {**{k: v for k, v in sources.items() if k != "use"}, "use": "assist"}
@@ -455,7 +485,13 @@ def main(argv=None):
     ap.add_argument("--fly-vertical", choices=["brain", "rule", "off"], default=None,
                     help="fly climb/dive source: brain (LC4->Giant Fiber climb, LPLC4->DNp07 dive; default), "
                          "rule (hand sawtooth), off")
+    ap.add_argument("--fly-commit", type=int, default=0, help="fly: keep a flee direction for N decisions (0 = off)")
+    ap.add_argument("--fly-dive-hz", type=float, default=40.0, help="fly: landing (DNp07) rate needed to dive")
+    ap.add_argument("--fly-waypoint", action="store_true",
+                    help="fly: approach channel pulled toward a safe spot 600 px from the core")
     ap.add_argument("--no-heal", action="store_true", help="don't drink healing potions (scripted assist)")
+    ap.add_argument("--whip-strategy", choices=["nearest", "balanced"], default=None,
+                    help="which Moon Lord part the whip assist tags (minions follow the tag)")
     ap.add_argument("--no-whip-assist", action="store_true", help="don't swing the whip (scripted assist)")
     ap.add_argument("--no-loadout-buffs", action="store_true", help="don't re-apply the loadout's buffs each episode")
     ap.add_argument("--params-file", default=None, help="tuned encoder/decoder params for --policy fly")
@@ -499,6 +535,7 @@ def main(argv=None):
     if args.no_heal:
         cfg["heal_at_hp"] = 0
     cfg["whip_slot"] = loadout.get("whip_slot")
+    cfg["whip_strategy"] = args.whip_strategy or loadout.get("whip_strategy", "nearest")
     cfg["whip_assist"] = bool(loadout.get("whip_assist")) and not args.no_whip_assist
     if not args.no_loadout_buffs:
         cfg["buffs"] = list(loadout.get("buffs", []))
@@ -516,6 +553,8 @@ def main(argv=None):
         kw["fly_flee"] = False
     if args.policy == "fly" and args.fly_vertical:
         kw["vertical"] = args.fly_vertical
+    if args.policy == "fly":
+        kw.update(commit_ticks=args.fly_commit, dive_on_hz=args.fly_dive_hz, waypoint=args.fly_waypoint)
     if args.policy == "scripted":
         # Keep the scripted dodger inside the built arena (90% of its half-width).
         a = loadout.get("arena", {})
@@ -537,10 +576,14 @@ def main(argv=None):
                     row = run_episode(bridge, policy, cfg, seed, f)
                 row["log"] = str(log_path.relative_to(ROOT))
             row["run"] = stamp
+            row["whip_strategy"] = cfg["whip_strategy"]
             if args.policy == "fly" and args.no_fly_flee:
                 row["variant"] = "no_fly_flee"
             elif args.policy == "fly":
-                row["variant"] = f"vertical_{args.fly_vertical or 'brain'}"
+                row["variant"] = (f"vertical_{args.fly_vertical or 'brain'}"
+                                  + (f"_commit{args.fly_commit}" if args.fly_commit else "")
+                                  + (f"_dive{args.fly_dive_hz:g}" if args.fly_dive_hz != 40.0 else "")
+                                  + ("_waypoint" if args.fly_waypoint else ""))
             rows.append(row)
             # Fake-bridge runs go to their own file so they never mix with real fights.
             with open(LOG_DIR / ("results_fake.jsonl" if args.fake else "results.jsonl"), "a") as f:
