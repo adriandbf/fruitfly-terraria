@@ -22,6 +22,8 @@ Time only moves on set_action: each call advances SUBSTEPS game ticks
 import math
 import random
 
+import movement
+
 TICKS_PER_S = 60
 SUBSTEPS = 6  # game ticks per set_action (10 Hz decisions)
 
@@ -51,21 +53,19 @@ DEFAULT_CONFIG = {
     "player_hp": 500,
     "regen_per_s": 10.0,
     "player_w": 20, "player_h": 42,
-    "run_speed": 6.0,             # px/tick -- NOT yet measured (idle never moved)
-    "run_accel": 0.6,
-    "gravity": 0.4, "max_fall": 10.0,
-    "wing_time_max": 150,         # measured wing_time_max
-    "infinite_wing_time": True,   # Soaring Insignia (1.4.4) -- assumed, idle never flew
-    "wing_ascent": 5.0,           # px/tick upward while flying -- not measured
+    "wing_time_max": 150,         # measured; movement itself comes from movement.py (probe-fitted)
     "infinite_flight": False,     # flying mount: up/down steer, never runs out
     "immune_ticks": 40,           # Terraria's standard post-hit immunity
     "respawn_ticks": 300,
     # Boss
     "boss_hp": 217500,
     "minion_dps": 1658.0,         # measured, no whip
-    "boss_height": 270.0,         # head sits this far above the player's y
-    "boss_drift": 1.0,            # px/tick toward the player's x -- not measured
-    "contact_radius": 150.0, "contact_damage": 80,  # not observed in the idle fight
+    # Live 2026-10-09 (random/scripted/human fights): the boss CHASES -- its core
+    # moves ~8 px/tick (as fast as the player flies) and sits ~130 px BELOW
+    # the player; the head is ~400 px above the core, hands ~400 px to each side.
+    "boss_height": -130.0,        # core this far above the player (negative = below)
+    "boss_drift": 8.0,            # px/tick max chase speed of the core
+    "contact_radius": 45.0, "contact_damage": 80,   # core/hand hitboxes are 46x66 px (live); contact is a top hit source
     # Attacks
     "bolt_period": 330, "bolt_damage": 71, "bolt_speed": 8.0, "bolt_count": 3,
     "sphere_period": 280, "sphere_damage": 126, "sphere_speed": 10.0, "sphere_count": 6,
@@ -99,6 +99,8 @@ class FakeMoonLordBridge:
         self.spawn_x, self.floor = 0.0, c["floor_y"]
         self.arena = None
         self.keep_focus = False
+        self.passthrough = False
+        self.human_keys = {}  # tests: keys a pretend human holds in passthrough mode
         self.action = {}
         self.selected = 0
         self.hotbar = {0: "StardustDragonStaff", 1: "EmpressBlade", 2: "RainbowWhip"}
@@ -111,6 +113,7 @@ class FakeMoonLordBridge:
         self.hp, self.dead, self.dead_ticks = c["player_hp"], False, 0
         self.immune = 0
         self.wing_time = c["wing_time_max"]
+        self.potions, self.potion_delay = 10, 0
         self.projs = []
         self.boss = None
         self._reset_counters()
@@ -132,6 +135,10 @@ class FakeMoonLordBridge:
     def _cmd_ping(self, _):
         return {"ok": True, "pong": True}
 
+    def _cmd_set_passthrough(self, p):
+        self.passthrough = bool(p.get("enabled", True))
+        return {"ok": True, "passthrough": self.passthrough}
+
     def _cmd_set_keep_focus(self, p):
         self.keep_focus = bool(p.get("enabled", True))
         return {"ok": True, "keep_focus": self.keep_focus}
@@ -143,12 +150,29 @@ class FakeMoonLordBridge:
         self.arena = (p.get("x", self.px), p.get("y", self.py))
         return {"ok": True, "arena": {"x": self.arena[0], "y": self.arena[1]}}
 
+    def _cmd_quick_heal(self, _):
+        before = self.hp
+        sick = self.potion_delay > 0
+        if not sick and not self.dead and self.potions > 0:
+            self.hp = min(self.cfg["player_hp"], self.hp + 200)
+            self.potions -= 1
+            self.potion_delay = 3600  # 60 s potion sickness
+        return {"ok": True, "hp_before": before, "hp_after": self.hp, "potion_sick": sick,
+                "healed": self.hp > before}
+
     def _cmd_equip_loadout(self, p):
-        self.hotbar = {i: (n[0] if isinstance(n, list) else n) for i, n in enumerate(p.get("hotbar") or []) if n}
+        for entry in p.get("inventory") or []:
+            if "Heal" in str(entry.get("name")):
+                self.potions = int(entry.get("stack", 1))
+        if p.get("hotbar"):
+            self.hotbar = {i: (n[0] if isinstance(n, list) else n) for i, n in enumerate(p["hotbar"]) if n}
         return {"ok": True, "unknown_items": []}
 
     def _cmd_apply_buffs(self, p):
         return {"ok": True, "applied": len(p.get("names") or []), "unknown_buffs": []}
+
+    def _cmd_clear_tombstones(self, _):
+        return {"ok": True, "tombstone_tiles_removed": 0}
 
     def _cmd_build_arena(self, p):
         self.arena = (p.get("x", self.px), p.get("y", self.py))
@@ -200,6 +224,9 @@ class FakeMoonLordBridge:
 
     def _cmd_set_action(self, p):
         self.action = {k: bool(p.get(k, False)) for k in ("left", "right", "jump", "use", "up", "down")}
+        if self.passthrough:  # like the mod: movement from the "human", only use from the bridge
+            self.action = {**{k: bool(self.human_keys.get(k)) for k in ("left", "right", "jump", "up", "down")},
+                           "use": self.action["use"]}
         self.aim = (p["aim_x"], p["aim_y"]) if p.get("aim_x") is not None else None
         for _ in range(SUBSTEPS):
             self._tick()
@@ -228,11 +255,14 @@ class FakeMoonLordBridge:
                        "wing_time": self.wing_time, "wing_time_max": c["wing_time_max"],
                        "mount_active": c["infinite_flight"], "immune": self.immune > 0,
                        "minions": self.minions, "max_minions": self.max_minions,
-                       "selected_item": self.selected},
+                       "selected_item": self.selected,
+                       "potion_delay": self.potion_delay, "heal_potions": self.potions},
             "npcs": npcs, "players": [], "projectiles": projs,
             "tiles": {"origin_tx": 0, "origin_ty": 0, "width": 0, "height": 0, "types": [], "solid": []},
             "episode": self._episode(),
-            "debug": {"has_focus": True, "simulated": True},
+            "debug": {"has_focus": True, "simulated": True,
+                      **{f"control_{k}": bool(self.human_keys.get(k)) for k in ("left", "right", "jump", "up", "down")},
+                      "control_use_item": bool(self.action.get("use"))},
         }
 
     # ---- simulation -------------------------------------------------------
@@ -275,35 +305,24 @@ class FakeMoonLordBridge:
         self._projectiles_tick()
         if self.immune > 0:
             self.immune -= 1
+        if self.potion_delay > 0:
+            self.potion_delay -= 1
 
     def _move_player(self):
         c, a = self.cfg, self.action
-        target = (c["run_speed"] if a.get("right") else 0.0) - (c["run_speed"] if a.get("left") else 0.0)
-        if self.vx < target:
-            self.vx = min(target, self.vx + c["run_accel"])
-        elif self.vx > target:
-            self.vx = max(target, self.vx - c["run_accel"])
-        if c["infinite_flight"]:
-            want = (-c["wing_ascent"] if (a.get("up") or a.get("jump")) else 0.0) + (c["wing_ascent"] if a.get("down") else 0.0)
-            self.vy += max(-0.5, min(0.5, want - self.vy))
-        else:
-            flying = (a.get("jump") or a.get("up")) and self.wing_time > 0 and c["wing_time_max"] > 0
-            if flying:
-                self.vy = max(-c["wing_ascent"], self.vy - 1.0)
-                if not c["infinite_wing_time"]:
-                    self.wing_time -= 1
-            else:
-                g = c["gravity"] * (2.0 if a.get("down") else 1.0)
-                self.vy = min(c["max_fall"], self.vy + g)
+        h = (1 if a.get("right") else 0) - (1 if a.get("left") else 0)
+        self.vx, self.vy = movement.step(self.vx, self.vy, h, movement.mode_of(a), self._on_ground())
         self.px += self.vx
         self.py += self.vy
         left, right = self.spawn_x - c["arena_half_width"], self.spawn_x + c["arena_half_width"] - c["player_w"]
         if not left <= self.px <= right:
             self.px, self.vx = max(left, min(right, self.px)), 0.0  # walls stop you dead
         if self.py + c["player_h"] >= self.floor:
-            self.py, self.vy = self.floor - c["player_h"], 0.0
-            self.wing_time = c["wing_time_max"]
-        self.py = max(self.py, self.floor - c["ceiling_px"])  # world ceiling
+            self.py = self.floor - c["player_h"]
+            self.vy = min(self.vy, 0.0)
+        top = self.floor - c["ceiling_px"]
+        if self.py < top:
+            self.py, self.vy = top, 0.0  # world height limit
 
     def _summon(self):
         # Holding `use` with a summon staff selected adds a minion every 30 ticks.
@@ -329,28 +348,33 @@ class FakeMoonLordBridge:
             self.boss, self.boss_killed, self.boss_kill_tick = None, True, self.ticks
             self.projs = [p for p in self.projs if p.type != PHANTASMAL_DEATHRAY]
             return
-        if math.hypot(pcx - b["cx"], pcy - b["cy"]) < c["contact_radius"]:
-            self._hurt(c["contact_damage"])
+        for bx, by in ((b["cx"], b["cy"]), (b["cx"] - 400.0, b["cy"] - 150.0), (b["cx"] + 400.0, b["cy"] - 150.0)):
+            if math.hypot(pcx - bx, pcy - by) < c["contact_radius"]:
+                self._hurt(c["contact_damage"])
         if not c["boss_attacks"]:
             return
         t = self.ticks
+        head = (b["cx"], b["cy"] - 400.0)
+        hands = ((b["cx"] - 400.0, b["cy"] - 150.0), (b["cx"] + 400.0, b["cy"] - 150.0))
         if t % c["bolt_period"] == 0:
-            hand = b["cx"] + self.rng.choice((-300.0, 300.0))
+            hx, hy = self.rng.choice(hands)
             for _ in range(c["bolt_count"]):
-                self._aimed(PHANTASMAL_BOLT, hand, b["cy"] + 100, c["bolt_speed"], c["bolt_damage"], spread=0.12)
+                self._aimed(PHANTASMAL_BOLT, hx, hy, c["bolt_speed"], c["bolt_damage"], spread=0.12)
         if t % c["sphere_period"] == 0:
+            hx, hy = self.rng.choice(hands)
             for _ in range(c["sphere_count"]):
-                self._aimed(PHANTASMAL_SPHERE, b["cx"], b["cy"] - 80, c["sphere_speed"], c["sphere_damage"], spread=0.35)
+                self._aimed(PHANTASMAL_SPHERE, hx, hy, c["sphere_speed"], c["sphere_damage"], spread=0.35)
         if t % c["eye_period"] == 0:
             for _ in range(3):
-                self._aimed(PHANTASMAL_EYE, b["cx"] + self.rng.uniform(-200, 200), b["cy"],
+                self._aimed(PHANTASMAL_EYE, head[0] + self.rng.uniform(-200, 200), head[1],
                             c["eye_speed"], c["eye_damage"], spread=0.8, homing=c["eye_turn"], life=c["eye_life"])
         if t >= c["ray_first"] and (t - c["ray_first"]) % c["ray_period"] == 0:
-            ang = math.atan2(pcy - b["cy"], pcx - b["cx"]) - c["ray_sweep"] / 2 * self.rng.choice((-1, 1))
-            ray = _Proj(PHANTASMAL_DEATHRAY, b["cx"], b["cy"], math.cos(ang), math.sin(ang), c["ray_damage"],
+            hy = b["cy"] - 400.0
+            ang = math.atan2(pcy - hy, pcx - b["cx"]) - c["ray_sweep"] / 2 * self.rng.choice((-1, 1))
+            ray = _Proj(PHANTASMAL_DEATHRAY, b["cx"], b["cy"] - 400.0, math.cos(ang), math.sin(ang), c["ray_damage"],
                         life=c["ray_duration"])
             ray.angle = ang
-            ray.omega = c["ray_sweep"] / c["ray_duration"] * (1 if (ang < math.atan2(pcy - b["cy"], pcx - b["cx"])) else -1)
+            ray.omega = c["ray_sweep"] / c["ray_duration"] * (1 if (ang < math.atan2(pcy - hy, pcx - b["cx"])) else -1)
             self.projs.append(ray)
 
     def _aimed(self, type_, x, y, speed, damage, spread=0.0, homing=0.0, life=600):
@@ -369,7 +393,7 @@ class FakeMoonLordBridge:
             if p.type == PHANTASMAL_DEATHRAY:
                 if not self.boss:
                     continue
-                p.x, p.y = self.boss["cx"], self.boss["cy"]
+                p.x, p.y = self.boss["cx"], self.boss["cy"] - 400.0
                 p.angle += p.omega
                 p.vx, p.vy = math.cos(p.angle), math.sin(p.angle)
                 # distance from player centre to the beam segment
