@@ -17,9 +17,9 @@ echo "== 3. random keys baseline"
 $PY $H --policy random --episodes "$N" --seed 100
 echo "== 4. scripted dodger (the ceiling)"
 $PY $H --policy scripted --episodes "$N" --seed 100
-echo "== 5. the fly (attention + flee-by-flying rule)"
-$PY $H --policy fly --episodes "$N" --seed 100
-echo "== 6. the fly without the flee-by-flying rule (ablation)"
-$PY $H --policy fly --episodes "$N" --seed 100 --no-fly-flee
+echo "== 5. the fly, climb/dive from the brain (LC4 -> climb, LPLC4 -> dive)"
+$PY $H --policy fly --episodes "$N" --seed 100 --fly-vertical brain
+echo "== 6. the fly, climb/dive from the hand-written sawtooth"
+$PY $H --policy fly --episodes "$N" --seed 100 --fly-vertical rule
 echo "== report"
 $PY training/moonlord/report.py --since "$START"
