@@ -49,6 +49,11 @@ def live_groups(since, until, results=RESULTS):
 
 def make(key, table=None):
     pol, variant, _ = key
+    if pol == "sectors":
+        import fly_params
+        data = fly_params.load(HERE / "params" / "sectors_linear.json")
+        kw = {**fly_params.policy_kwargs(data), "weights": data["weights"]}
+        return lambda seed=0: policies.SectorPolicy(**kw)
     if pol != "fly":
         lo = json.loads((HERE / "loadout.json").read_text())
         kw = {}

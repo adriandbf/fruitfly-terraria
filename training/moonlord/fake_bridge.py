@@ -37,6 +37,8 @@ PHANTASMAL_EYE = 452
 PHANTASMAL_SPHERE = 454
 PHANTASMAL_DEATHRAY = 455
 PHANTASMAL_BOLT = 462
+MOON_LEECH = 456   # the tongue: live, launched from ~180 px above the core every ~17 s, slightly homing,
+                   # 0 damage itself; a catch drags the player to the core (attributed hits ~1 per 26 s)
 # NPC type ids (real NPCID values).
 MOON_LORD_CORE = 398
 
@@ -54,6 +56,8 @@ DEFAULT_CONFIG = {
     "seed": 0,
     "arena_half_width": 6400.0,   # walls this far either side of the start x (= the 400-tile arena)
     "floor_y": 0.0,               # world y of the floor (y grows downward)
+    "rows": 12, "row_spacing_px": 384.0,   # planter-box rows above the floor (large-world arena)
+    "row_pass_vy": 1.0,                   # fall speed left after dropping through a row (live median ~1)
     "ceiling_px": 4000.0,         # world top this far above the floor (large world: normal gravity ends ~3900 px up)
     "player_hp": 600,                # 500 + Lifeforce 20% (live max_hp 600)
     "regen_per_s": 3.5,              # live 2026-10-09: ~3.5 HP/s between hits (was 10)
@@ -99,6 +103,10 @@ DEFAULT_CONFIG = {
     # v2 aim model (fitted to live hit rates by calibrate_fake.py / fit_fake.py)
     "bolt_lead": 0.0, "bolt_spread": 0.12, "bolt_life": 600,
     "sphere_lead": 0.0, "sphere_spread": 0.35, "sphere_life": 600,
+    # Moon Leech (tongue), v3 2026-10-09 from 70+ live fights: catch -> pulled toward the core
+    # for leech_grab_ticks (no control), then bitten for leech_damage.
+    "leech_period": 1040, "leech_speed": 9.0, "leech_turn": 0.02, "leech_life": 310,
+    "leech_grab_ticks": 40, "leech_pull": 14.0, "leech_damage": 100,
     "ray_period": 900, "ray_first": 1020, "ray_damage": 100, "ray_sweep": 1.4,
     "ray_duration": 120, "ray_width": 40.0, "ray_length": 2400.0,
     "boss_attacks": True,
@@ -109,7 +117,7 @@ DEFAULT_CONFIG = {
 _FIT_PATH = Path(__file__).resolve().parent / "fake_fit.json"
 FITTED = json.loads(_FIT_PATH.read_text())["config"] if _FIT_PATH.exists() else {}
 
-SIZES = {PHANTASMAL_BOLT: 8, PHANTASMAL_SPHERE: 40, PHANTASMAL_EYE: 14, PHANTASMAL_DEATHRAY: 36}  # measured hitboxes
+SIZES = {MOON_LEECH: 16, PHANTASMAL_BOLT: 8, PHANTASMAL_SPHERE: 40, PHANTASMAL_EYE: 14, PHANTASMAL_DEATHRAY: 36}  # measured hitboxes
 DEFAULT_DAMAGE = {PHANTASMAL_BOLT: 71, PHANTASMAL_SPHERE: 126, PHANTASMAL_EYE: 66, PHANTASMAL_DEATHRAY: 78}
 
 
@@ -316,6 +324,8 @@ class FakeMoonLordBridge:
     def _reset_counters(self):
         self.ticks = self.hits = self.damage_taken = self.deaths = 0
         self.boss_killed, self.boss_kill_tick = False, -1
+        self.grabbed = 0
+        self.on_row = False
 
     def _episode(self):
         return {"ticks": self.ticks, "seconds": self.ticks / TICKS_PER_S, "hits": self.hits,
@@ -329,7 +339,11 @@ class FakeMoonLordBridge:
         return self.px + self.cfg["player_w"] / 2, self.py + self.cfg["player_h"] / 2
 
     def _on_ground(self):
-        return self.py + self.cfg["player_h"] >= self.floor - 0.01
+        return self.py + self.cfg["player_h"] >= self.floor - 0.01 or getattr(self, "on_row", False)
+
+    def _row_lines(self):
+        c = self.cfg
+        return [self.floor - r * c["row_spacing_px"] for r in range(1, c["rows"] + 1)] if c.get("rows") else []
 
     def _tick(self):
         c = self.cfg
@@ -358,10 +372,39 @@ class FakeMoonLordBridge:
 
     def _move_player(self):
         c, a = self.cfg, self.action
+        if getattr(self, "grabbed", 0) > 0 and self.boss:   # caught by the tongue
+            self.grabbed -= 1
+            pcx, pcy = self._centre()
+            dx, dy = self.boss["cx"] - pcx, self.boss["cy"] - pcy
+            d = math.hypot(dx, dy) or 1.0
+            step = min(c["leech_pull"], d)
+            self.vx, self.vy = dx / d * step, dy / d * step
+            self.px += self.vx
+            self.py += self.vy
+            if self.grabbed == 0:
+                self._hurt(c["leech_damage"])
+            return
         h = (1 if a.get("right") else 0) - (1 if a.get("left") else 0)
         self.vx, self.vy = movement.step(self.vx, self.vy, h, movement.mode_of(a), self._on_ground())
+        if self.on_row and (a.get("down") or self.vy < 0):
+            self.on_row = False            # drop through / take off
+        feet0 = self.py + c["player_h"]
         self.px += self.vx
         self.py += self.vy
+        if self.on_row:
+            self.py, self.vy = feet0 - c["player_h"], 0.0
+        elif self.vy > 0:
+            feet1 = self.py + c["player_h"]
+            for row in self._row_lines():
+                if feet0 <= row < feet1:
+                    # Planter rows (live 2026-10-09): falling with down held passes
+                    # through but the row stops the fall (vy 10 -> ~1); without
+                    # down you land on it.
+                    if a.get("down"):
+                        self.vy = min(self.vy, c["row_pass_vy"])
+                    else:
+                        self.py, self.vy, self.on_row = row - c["player_h"], 0.0, True
+                    break
         left, right = self.spawn_x - c["arena_half_width"], self.spawn_x + c["arena_half_width"] - c["player_w"]
         if not left <= self.px <= right:
             self.px, self.vx = max(left, min(right, self.px)), 0.0  # walls stop you dead
@@ -445,6 +488,9 @@ class FakeMoonLordBridge:
             for _ in range(c["sphere_count"]):
                 self._aimed(PHANTASMAL_SPHERE, hx, hy, c["sphere_speed"], c["sphere_damage"], spread=c["sphere_spread"],
                             life=c["sphere_life"], lead=c["sphere_lead"])
+        if c["leech_period"] and t % c["leech_period"] == c["leech_period"] // 2:
+            self._aimed(MOON_LEECH, b["cx"], b["cy"] - 180.0, c["leech_speed"], 0, spread=0.1,
+                        homing=c["leech_turn"], life=c["leech_life"])
         if head_alive and t % c["eye_period"] == 0:
             for _ in range(3):
                 self._aimed(PHANTASMAL_EYE, head[0] + self.rng.uniform(-200, 200), head[1],
@@ -530,6 +576,10 @@ class FakeMoonLordBridge:
                 p.y += p.vy
                 r = p.size / 2
                 if abs(p.x - pcx) <= hw + r and abs(p.y - pcy) <= hh + r:
+                    if p.type == MOON_LEECH:
+                        if not getattr(self, "grabbed", 0) and not self.dead:
+                            self.grabbed = self.cfg["leech_grab_ticks"]
+                        continue
                     if self._hurt(p.damage):
                         continue  # projectile is used up by the hit
             if p.life > 0 and abs(p.x - pcx) < 4000 and abs(p.y - pcy) < 4000:

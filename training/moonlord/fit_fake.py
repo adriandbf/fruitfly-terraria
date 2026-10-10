@@ -40,6 +40,9 @@ KNOBS = [  # (key, low, high, integer?)
     ("eye_turn", 0.01, 0.12, False), ("eye_speed", 6.0, 12.0, False), ("eye_period", 100, 320, True),
     ("eye_life", 120, 900, True),
     ("contact_radius", 30.0, 80.0, False), ("hand_speed", 4.0, 20.0, False),
+    ("leech_period", 600, 2000, True), ("leech_speed", 6.0, 14.0, False), ("leech_turn", 0.0, 0.06, False),
+    ("leech_grab_ticks", 10, 80, True), ("leech_damage", 50, 200, True),
+    ("dps_near", 2500.0, 4500.0, False), ("dps_per_px", 0.0, 4.0, False), ("dps_min", 300.0, 1500.0, False),
 ]
 
 # Live references (2026-10-09). small = small world, Spooky + Berserker's Glove;
@@ -51,7 +54,9 @@ FIT = [(("idle", "", "balanced"), "20261009_155000", "20261009_172000"),
        (("scripted", "", "balanced"), "20261009_180000", "20261009_190000"),
        # 2026-10-09 19:05 batch: the two new behaviours the first fit got wrong
        (("scripted", "ring650,1050_keep400_dither1", "balanced"), "20261009_190000", None),
-       (("fly", "tuned_cma_v3_keepaway", "balanced"), "20261009_190000", None)]
+       (("fly", "tuned_cma_v3_keepaway", "balanced"), "20261009_190000", "20261009_200000"),
+       # 21:19 batch: the 8-direction probe fought further out than anything before
+       (("sectors", "", "balanced"), "20261009_200000", None)]
 HOLDOUT = [(("scripted", "", "nearest"), "20261009_155000", "20261009_172000"),
            (("fly", "vertical_rule_commit10", "balanced"), "20261009_155000", "20261009_172000"),
            (("scripted", "", "balanced"), "20261009_155000", "20261009_172000")]

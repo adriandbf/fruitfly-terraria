@@ -1,93 +1,108 @@
 {
   "config": {
-    "bolt_lead": 0.5604,
-    "bolt_spread": 0.1231,
-    "bolt_life": 600,
-    "bolt_period": 420,
-    "bolt_speed": 8.7034,
-    "sphere_lead": 0.3264,
-    "sphere_period": 320,
-    "sphere_speed": 12.5881,
-    "eye_turn": 0.0596,
+    "bolt_lead": 1.0,
+    "bolt_spread": 0.1215,
+    "bolt_life": 576,
+    "bolt_period": 346,
+    "bolt_speed": 11.2635,
+    "sphere_lead": 0.2689,
+    "sphere_period": 349,
+    "sphere_speed": 12.1906,
+    "eye_turn": 0.0556,
     "eye_speed": 12.0,
-    "eye_period": 319,
-    "eye_life": 489,
-    "contact_radius": 34.3624,
-    "hand_speed": 16.8567
+    "eye_period": 320,
+    "eye_life": 272,
+    "contact_radius": 49.9808,
+    "hand_speed": 12.5706,
+    "leech_period": 2000,
+    "leech_speed": 7.7354,
+    "leech_turn": 0.0297,
+    "leech_grab_ticks": 20,
+    "leech_damage": 149,
+    "dps_near": 2705.8958,
+    "dps_per_px": 0.7337,
+    "dps_min": 869.3884
   },
-  "loss_fresh": 0.42986554940323757,
-  "survival_error_mean": 0.10847960331620848,
+  "loss_fresh": 0.557579095175199,
+  "survival_error_mean": 0.12683769097212,
   "groups": [
     {
       "group": "idle:balanced",
       "live_s": 18.325,
-      "fake_s": 20.5,
+      "fake_s": 15.9,
       "live_left": 0.703,
-      "fake_left": 0.6781875
+      "fake_left": 0.8081875000000001
     },
     {
       "group": "random:balanced",
       "live_s": 27.235,
-      "fake_s": 20.15,
+      "fake_s": 20.75,
       "live_left": 0.5859,
-      "fake_left": 0.7396875
+      "fake_left": 0.770875
     },
     {
       "group": "fly:vertical_brain_commit10:balanced",
       "live_s": 20.015,
-      "fake_s": 18.9,
+      "fake_s": 22.2,
       "live_left": 0.7050000000000001,
-      "fake_left": 0.712
+      "fake_left": 0.7293125
     },
     {
       "group": "fly:tuned_cma_table_defaults:balanced",
       "live_s": 26.18,
-      "fake_s": 24.0,
+      "fake_s": 26.15,
       "live_left": 0.656,
-      "fake_left": 0.728375
+      "fake_left": 0.728125
     },
     {
       "group": "scripted:balanced",
       "live_s": 38.599999999999994,
-      "fake_s": 33.25,
+      "fake_s": 40.15,
       "live_left": 0.4738,
-      "fake_left": 0.5656875
+      "fake_left": 0.5416875
     },
     {
       "group": "scripted:ring650,1050_keep400_dither1:balanced",
       "live_s": 38.974999999999994,
-      "fake_s": 40.45,
+      "fake_s": 47.1,
       "live_left": 0.5344,
-      "fake_left": 0.5619375
+      "fake_left": 0.518
     },
     {
       "group": "fly:tuned_cma_v3_keepaway:balanced",
       "live_s": 26.435,
-      "fake_s": 25.75,
+      "fake_s": 30.5,
       "live_left": 0.7107,
-      "fake_left": 0.7545
+      "fake_left": 0.6996875
+    },
+    {
+      "group": "sectors:balanced",
+      "live_s": 47.295,
+      "fake_s": 58.95,
+      "live_left": 0.517,
+      "fake_left": 0.5069375
     },
     {
       "group": "scripted:nearest",
       "live_s": 38.135000000000005,
-      "fake_s": 33.2,
+      "fake_s": 39.1,
       "live_left": 0.4617,
-      "fake_left": 0.561875
+      "fake_left": 0.565125
     },
     {
       "group": "fly:vertical_rule_commit10:balanced",
       "live_s": 21.195,
-      "fake_s": 17.7,
+      "fake_s": 18.7,
       "live_left": 0.6658,
-      "fake_left": 0.726875
+      "fake_left": 0.7690625
     },
     {
       "group": "scripted:balanced",
       "live_s": 35.765,
-      "fake_s": 33.25,
+      "fake_s": 40.15,
       "live_left": 0.5013,
-      "fake_left": 0.5656875
+      "fake_left": 0.5416875
     }
   ],
-  "fitted": "2026-10-09 20:54:27"
+  "fitted": "2026-10-09 22:53:19"
 }
