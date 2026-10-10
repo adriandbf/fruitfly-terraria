@@ -557,6 +557,8 @@ def main(argv=None):
     ap.add_argument("--params-file", default=None, help="tuned params JSON for --policy fly (encoder/decoder/policy blocks, from train_fly_cma.py or imitate.py)")
     ap.add_argument("--gym-types", default=None, help="projectile type ids for gym volleys, e.g. 462,454,452")
     ap.add_argument("--fake", action="store_true", help="use the offline fake bridge instead of the game")
+    ap.add_argument("--fly-null", default="none", choices=["none", "shuffled", "ablated"],
+                    help="scene fly: run it on a null brain (control)")
     ap.add_argument("--dodger-ring", default=None, help="scripted: min,max px from the core to circle at (default 450,900)")
     ap.add_argument("--dodger-keep-away", type=float, default=None, help="scripted: px to keep from every boss part (default 250)")
     ap.add_argument("--dodger-dither", type=float, default=None, help="scripted: cost of changing move (default 0.2)")
@@ -632,8 +634,24 @@ def main(argv=None):
             kw["boss_keep_away"] = args.dodger_keep_away
         if args.dodger_dither is not None:
             kw["dither_cost"] = args.dodger_dither
-    policy = make_policy(args.policy, seed=args.seed, **kw)
+    if args.policy == "fly" and args.params_file and "readout" in json.loads(Path(args.params_file).read_text()):
+        # Scene fly (v2 senses + learned readout, scene_fly.py): same brain, richer input types.
+        from scene_fly import SceneFlyPolicy
+        import fly_params
+        data = json.loads(Path(args.params_file).read_text())
+        brain_kw = {}
+        if args.fly_null != "none":
+            # Null-brain control live (same senses and readout, scrambled/ablated brain).
+            from brain_backend import make_brain
+            b, rf = make_brain("fast", args.fly_null, seed=0)
+            brain_kw = {"brain": b, "readout_fn": rf}
+        policy = SceneFlyPolicy(readout=data["readout"], **brain_kw, **fly_params.policy_kwargs(data))
+    else:
+        policy = make_policy(args.policy, seed=args.seed, **kw)
 
+    if hasattr(policy, "_ensure_brain") and not args.fake:
+        print("Building the brain (once, before the first fight)...", flush=True)
+        policy._ensure_brain()
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     rows = []
@@ -656,7 +674,8 @@ def main(argv=None):
             if args.policy == "fly" and args.no_fly_flee:
                 row["variant"] = "no_fly_flee"
             elif args.policy == "fly" and args.params_file:
-                row["variant"] = "tuned_" + Path(args.params_file).stem
+                row["variant"] = ("tuned_" + Path(args.params_file).stem
+                                  + ("" if args.fly_null == "none" else f"_brain_{args.fly_null}"))
             elif args.policy == "fly":
                 row["variant"] = (f"vertical_{args.fly_vertical or 'brain'}"
                                   + (f"_commit{args.fly_commit}" if args.fly_commit else "")
