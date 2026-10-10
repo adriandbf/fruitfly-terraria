@@ -34,11 +34,14 @@ PARAM_SPEC = [
     ("policy", "dive_on_hz", 10.0, 150.0, False),
     ("policy", "above_px", 0.0, 300.0, False),
     ("policy", "keep_away_px", 0.0, 1500.0, False),   # 0 = off (the core looms only within threat range)
+    ("policy", "surface_range_px", 0.0, 1500.0, False),  # 0 = off (arena ceiling/floor/walls don't loom)
+    ("policy", "threat_sum_weight", 0.0, 1.0, False),    # only used with multi_threat (set outside the search)
 ]
 
 # Hand-picked starting point (the live "fly brain" setup before tuning):
 # the module defaults, plus FlyPolicy's defaults.
-POLICY_DEFAULTS = {"threat_horizon_ticks": 90, "commit_ticks": 0, "dive_on_hz": 40.0, "above_px": 60.0, "keep_away_px": 0.0}
+POLICY_DEFAULTS = {"threat_horizon_ticks": 90, "commit_ticks": 0, "dive_on_hz": 40.0, "above_px": 60.0, "keep_away_px": 0.0,
+                   "surface_range_px": 0.0, "threat_sum_weight": 0.5}
 
 
 def _defaults():
@@ -72,10 +75,20 @@ def default_unit():
     return params_to_unit({})
 
 
+def arena_px(loadout=None):
+    """The arena box FlyPolicy's looming surfaces use, from loadout.json:
+    half-width and climbable height (rows x spacing, capped by max_rise)."""
+    if loadout is None:
+        loadout = json.loads((Path(__file__).resolve().parent / "loadout.json").read_text())
+    a = loadout.get("arena") or {}
+    rise = min(a.get("rows", 4) * a.get("row_spacing_tiles", 12), a.get("max_rise_tiles") or 10 ** 6)
+    return {"half_width_px": 16.0 * a.get("half_width_tiles", 100), "height_px": 16.0 * rise}
+
+
 def policy_kwargs(params, vertical="brain"):
     """Params dict -> FlyPolicy(**kwargs)."""
     return {"enc_params": dict(params.get("encoder") or {}), "dec_params": dict(params.get("decoder") or {}),
-            "vertical": vertical, **(params.get("policy") or {})}
+            "vertical": vertical, "arena": arena_px(), **(params.get("policy") or {})}
 
 
 def load(path):

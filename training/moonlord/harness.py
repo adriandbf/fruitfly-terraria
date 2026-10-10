@@ -523,7 +523,7 @@ def config_from_loadout(loadout, mode="fight", whip_strategy=None, buffs=True, h
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--policy", default="idle", choices=["idle", "random", "scripted", "fly", "human"])
+    ap.add_argument("--policy", default="idle", choices=["idle", "random", "scripted", "fly", "human", "sectors"])
     ap.add_argument("--mode", default="fight", choices=["fight", "gym", "free"],
                     help="fight = Moon Lord; gym = projectile volleys; free = nothing spawns (movement demos)")
     ap.add_argument("--episodes", type=int, default=1)
@@ -611,9 +611,16 @@ def main(argv=None):
         kw["vertical"] = args.fly_vertical
     if args.policy == "fly":
         kw.update(commit_ticks=args.fly_commit, dive_on_hz=args.fly_dive_hz, waypoint=args.fly_waypoint)
+        import fly_params
+        kw["arena"] = fly_params.arena_px(loadout)
     if args.policy == "fly" and args.params_file:
         # Tuned FlyPolicy knobs (train_fly_cma.py / imitate.py) win over the CLI defaults.
         kw.update(data.get("policy") or {})
+    if args.policy == "sectors":
+        # Information-ceiling probe (not the fly): weights + FlyPolicy attention knobs from a params file.
+        data = json.loads(Path(args.params_file or HERE / "params" / "sectors_linear.json").read_text())
+        import fly_params
+        kw = {**fly_params.policy_kwargs(data), "weights": data["weights"]}
     if args.policy == "scripted":
         # Keep the scripted dodger inside the built arena (90% of its half-width).
         a = loadout.get("arena", {})

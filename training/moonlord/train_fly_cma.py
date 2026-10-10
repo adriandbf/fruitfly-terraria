@@ -81,14 +81,16 @@ def randomized(fake_cfg, seed, r):
     return out
 
 
-def _init_worker(engine, null, table, brain_seed, fake_cfg, whip_strategy, max_seconds, vertical, randomize=0.0):
+def _init_worker(engine, null, table, brain_seed, fake_cfg, whip_strategy, max_seconds, vertical, randomize=0.0,
+                 extra_policy=None):
     import harness
     from brain_backend import make_brain
     brain, readout = make_brain(engine, null, seed=brain_seed, table_path=table)
     loadout = json.loads((HERE / "loadout.json").read_text())
     cfg = harness.config_from_loadout(loadout, "fight", whip_strategy)
     cfg["max_seconds"] = {"fight": max_seconds}
-    _W.update(brain=brain, readout=readout, cfg=cfg, fake=fake_cfg or {}, vertical=vertical, randomize=randomize)
+    _W.update(brain=brain, readout=readout, cfg=cfg, fake=fake_cfg or {}, vertical=vertical, randomize=randomize,
+              extra=extra_policy or {})
 
 
 def _episode(job):
@@ -100,7 +102,8 @@ def _episode(job):
     params = fly_params.unit_to_params(unit)
     brain = _W["brain"]
     brain.reset_state(seed=seed)
-    pol = FlyPolicy(brain=brain, readout_fn=_W["readout"], **fly_params.policy_kwargs(params, _W["vertical"]))
+    pol = FlyPolicy(brain=brain, readout_fn=_W["readout"],
+                    **{**fly_params.policy_kwargs(params, _W["vertical"]), **_W["extra"]})
     bridge = FakeMoonLordBridge({"seed": seed, **randomized(_W["fake"], seed, _W["randomize"])})
     row = harness.run_episode(bridge, pol, _W["cfg"], seed)
     frac = row.get("boss_parts_frac_left")
@@ -110,7 +113,7 @@ def _episode(job):
 class Evaluator:
     def __init__(self, args):
         init = (args.engine, args.null, args.table, args.brain_seed, _fake_cfg(args),
-                args.whip_strategy, args.max_seconds, args.vertical, args.randomize)
+                args.whip_strategy, args.max_seconds, args.vertical, args.randomize, _extra(args))
         if args.workers > 1:
             self.pool = mp.get_context("spawn").Pool(args.workers, _init_worker, init)
             self.map = self.pool.map
@@ -134,6 +137,11 @@ class Evaluator:
     def close(self):
         if self.pool:
             self.pool.close()
+
+
+def _extra(args):
+    """FlyPolicy switches that aren't searched over (structural variants)."""
+    return {"multi_threat": True} if args.multi_threat else {}
 
 
 def _rel(path):
@@ -221,6 +229,7 @@ def train(args):
     params = fly_params.unit_to_params(cands[pick])
     if args.vertical != "brain":
         params["policy"]["vertical"] = args.vertical
+    params["policy"].update(_extra(args))
     out = PARAMS_DIR / f"{name}.json"
     fly_params.save(out, params, engine=args.engine, null=args.null, table=args.table, picked=pick,
                     train_seeds=len(train_seeds), heldout_seeds=len(held_seeds),
@@ -253,6 +262,7 @@ def main(argv=None):
     ap.add_argument("--vertical", default="brain", choices=["brain", "rule"])
     ap.add_argument("--whip-strategy", default="balanced", choices=["nearest", "balanced"])
     ap.add_argument("--fake-config", default=None, help='JSON overrides for fake_bridge, e.g. \'{"minion_dps": 2000}\'')
+    ap.add_argument("--multi-threat", action="store_true", help="fly sees every threat at once (FlyPolicy multi_threat)")
     ap.add_argument("--randomize", type=float, default=0.15,
                     help="per-fight boss variation, +-fraction (0 = the exact fitted fake)")
     ap.add_argument("--init", default=None, help="params file to start from (e.g. imitate.py's)")

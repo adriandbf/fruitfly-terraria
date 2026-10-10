@@ -260,7 +260,8 @@ class FlyPolicy:
     def __init__(self, enc_params=None, dec_params=None, brain=None, readout_fn=None,
                  threat_horizon_ticks=90, fly_flee=True, vertical="brain",
                  commit_ticks=0, dive_on_hz=40.0, waypoint=False, waypoint_px=600.0,
-                 above_px=None, keep_away_px=0.0):
+                 above_px=None, keep_away_px=0.0, surface_range_px=0.0, arena=None,
+                 multi_threat=False, threat_sum_weight=0.5):
         root = Path(__file__).resolve().parents[2]
         for sub in ("brain", "interface"):
             if str(root / sub) not in sys.path:
@@ -281,6 +282,24 @@ class FlyPolicy:
         # a distance scaled by threat_max_range / keep_away_px, same side, so
         # the drive falls off linearly over keep_away_px. 0 = off.
         self.keep_away_px = float(keep_away_px or 0.0)
+        # (5) surfaces loom: the arena's ceiling, floor and side walls approach
+        # like any looming object once the fly is within surface_range_px of
+        # them -- the ceiling from above (LPLC4 -> DNp07, the LANDING neuron:
+        # a dive), the floor and walls level/below (LC4 -> Giant Fiber: climb
+        # and turn away). Live 2026-10-09 the keep-away fly climbed to the
+        # arena top and sat on the leash 34% of the time, cornered. 0 = off.
+        # arena = {"half_width_px", "height_px"} (harness passes the loadout's).
+        self.surface_range_px = float(surface_range_px or 0.0)
+        self.arena = arena
+        # (6) multi-threat vision: instead of showing the brain ONE threat, every
+        # looming thing drives the looming population on its own side, the way
+        # LC4/LPLC4 columns tile the visual field. Per side and channel:
+        # rate = strongest + threat_sum_weight * (the rest), capped at max rate,
+        # plus contra_fraction of the other side. So a pincer reads as "both
+        # sides, more on the left" instead of flipping between two targets,
+        # and DNa02's left/right balance can pick the emptier side.
+        self.multi_threat = bool(multi_threat)
+        self.threat_sum_weight = float(threat_sum_weight)
         self.fly_flee = fly_flee
         # vertical: "brain" = climb/dive from the connectome (LC4 -> Giant Fiber
         # = climb, LPLC4 -> DNp07 landing = dive; M3, 2026-10-09); "rule" = the
@@ -380,6 +399,90 @@ class FlyPolicy:
         return ({"x": p["x"] + (cx - px) * eff / d, "y": p["y"] + (cy - py) * eff / d, "hostile": True,
                  "from_npc": 398, "keep_away": True}, eff)
 
+    def _surfaces(self, state):
+        """[(pseudo-NPC, effective distance, "above"|"level")] for the arena
+        surfaces within surface_range_px."""
+        if not self.surface_range_px or not self.arena:
+            return []
+        ep = state.get("episode") or {}
+        mark, p = ep.get("arena"), state["player"]
+        if not mark:
+            return []
+        px, py = p.get("cx", p["x"]), p.get("cy", p["y"])
+        feet = mark["y"] + (p.get("height") or 42)
+        top = feet - self.arena["height_px"]
+        if ep.get("full_gravity_y") is not None:
+            top = max(top, ep["full_gravity_y"])
+        centre = mark["x"] + (p.get("width") or 20) / 2
+        rng = {**self.encoder.DEFAULT_PARAMS, **(self.enc_params or {})}["threat_max_range_px"]
+        scale = rng / self.surface_range_px
+        out = []
+        for d, ux, uy, slot in ((py - top, 0.0, -1.0, "above"), (feet - py, 0.0, 1.0, "level"),
+                                (px - (centre - self.arena["half_width_px"]), -1.0, 0.0, "level"),
+                                ((centre + self.arena["half_width_px"]) - px, 1.0, 0.0, "level")):
+            if 0 < d < self.surface_range_px:
+                eff = max(1.0, d * scale)
+                out.append(({"x": p["x"] + ux * eff, "y": p["y"] + uy * eff, "hostile": True, "surface": True},
+                            eff, slot))
+        return out
+
+    def _with_surface(self, state, chosen, slot):
+        """Swap in a looming surface for this slot if it looms harder."""
+        best = chosen
+        p = state["player"]
+        d_best = math.hypot(chosen["x"] - p["x"], chosen["y"] - p["y"]) if chosen else None
+        for pseudo, eff, sl in self._surfaces(state):
+            if sl == slot and (d_best is None or eff < d_best):
+                best, d_best = pseudo, eff
+        return best
+
+    def _multi_drive(self, state):
+        """(lc4_left, lc4_right, lplc4_left, lplc4_right) rates in Hz from
+        every threat at once (see multi_threat)."""
+        enc = self.encoder
+        prm = {**enc.DEFAULT_PARAMS, **(self.enc_params or {})}
+        rng, mx, contra = prm["threat_max_range_px"], prm["max_rate_hz"], prm["contra_fraction"]
+        p = state["player"]
+        pcx, pcy = p.get("cx", p["x"]), p.get("cy", p["y"])
+        rates = {("level", -1): [], ("level", 1): [], ("above", -1): [], ("above", 1): []}
+
+        def add(slot, side, eff):
+            r = enc._range_rate(eff, rng, mx)
+            if r <= 0:
+                return
+            if side == 0:  # straight above/below (a surface): both eyes see it
+                rates[(slot, -1)].append(r)
+                rates[(slot, 1)].append(r)
+            else:
+                rates[(slot, side)].append(r)
+
+        for t, _ttc in self._threats(state):
+            x, y = t["x"], t["y"]
+            d = math.hypot(x - pcx, y - pcy)
+            if t.get("from_npc") is not None:
+                d = max(1.0, d - 40.0)
+            above = y < pcy - self.ABOVE_PX and t.get("approaching", True)
+            add("above" if above else "level", 1 if x >= pcx else -1, d)
+        cp = self._core_pseudo(state)
+        if cp is not None:
+            core = next(n for n in state["npcs"] if n.get("type") == 398)
+            cx, cy = core.get("cx", core["x"]), core.get("cy", core["y"])
+            add("above" if cy < pcy - self.ABOVE_PX else "level", 1 if cx >= pcx else -1, cp[1])
+        for pseudo, eff, slot in self._surfaces(state):
+            dx = pseudo["x"] - p["x"]
+            add(slot, 0 if abs(dx) < 1 else (1 if dx > 0 else -1), eff)
+
+        def side_rate(rs):
+            if not rs:
+                return 0.0
+            top = max(rs)
+            return min(mx, top + self.threat_sum_weight * (sum(rs) - top))
+        out = {}
+        for slot in ("level", "above"):
+            l, r = side_rate(rates[(slot, -1)]), side_rate(rates[(slot, 1)])
+            out[slot] = (min(mx, l + contra * r), min(mx, r + contra * l))
+        return out["level"][0], out["level"][1], out["above"][0], out["above"][1]
+
     def _with_core(self, state, chosen):
         """Swap in the keep-away core if it looms harder than the chosen threat."""
         cp = self._core_pseudo(state)
@@ -444,15 +547,26 @@ class FlyPolicy:
         self._ensure_brain()
         seen = dict(state)
         extra_ids, extra_rates = [], []
-        if self.vertical == "brain":
+        if self.multi_threat and self.vertical == "brain":
+            n = self.neurons
+            l4l, l4r, lpl, lpr = self._multi_drive(state)
+            self.last_threat = {"multi": [round(v, 1) for v in (l4l, l4r, lpl, lpr)]}
+            seen["npcs"] = []
+            for ids_, r_ in ((n.LC4_LOOMING_LEFT, l4l), (n.LC4_LOOMING_RIGHT, l4r),
+                             (n.LPLC4_LOOMING_LEFT, lpl), (n.LPLC4_LOOMING_RIGHT, lpr)):
+                if r_ > 0:
+                    extra_ids += list(ids_)
+                    extra_rates += [r_] * len(ids_)
+        elif self.vertical == "brain":
             above, level = self.urgent_by_elevation(state)
             self.last_threat = {"above": above, "level": level}
-            level = self._with_core(state, level)
-            self.last_threat["level"] = level
+            level = self._with_surface(state, self._with_core(state, level), "level")
+            above = self._with_surface(state, above, "above")
+            self.last_threat = {"above": above, "level": level}
             seen["npcs"] = [level] if level else []          # LC4 channel: level/below threat
             extra_ids, extra_rates = self._lplc4_drive(state, above)  # LPLC4 channel: threat from above
         else:
-            threat = self._with_core(state, self.most_urgent(state))
+            threat = self._with_surface(state, self._with_core(state, self.most_urgent(state)), "level")
             self.last_threat = threat
             seen["npcs"] = [threat] if threat else []   # attention: one threat, the most urgent
         if self.waypoint:
@@ -462,7 +576,7 @@ class FlyPolicy:
                 seen["players"] = [{"x": core.get("cx", core["x"]) + side * self.waypoint_px,
                                     "y": p.get("y", 0.0), "name": "waypoint"}]
         self.last_drives = self.encoder.compute_drives(seen, self.enc_params)
-        ids, rates = self.encoder.encode(seen, self.enc_params)
+        ids, rates = ([], []) if self.multi_threat and self.vertical == "brain" else self.encoder.encode(seen, self.enc_params)
         spikes = self.brain.stimulate(list(ids) + list(extra_ids), list(rates) + list(extra_rates), duration_ms=100)
         readout = self.readout_fn(spikes)
         a = self.flee.decode(readout, p.get("direction", 1))
@@ -509,6 +623,64 @@ class FlyPolicy:
         return action, sources
 
 
+class SectorPolicy(FlyPolicy):
+    """NOT the fly: an information-ceiling probe. Sees looming in 8 compass
+    sectors around the character (the same threats, core keep-away and arena
+    surfaces FlyPolicy attends to, but resolved by direction instead of
+    summed into left/right totals) and maps them LINEARLY to a sideways
+    direction (held for a while once chosen) and climb/dive/glide. The
+    weights come from a CMA-ES search on the fake fight (params file). If this
+    does well live, direction-resolved looming is enough information to fight
+    the boss -- and that's what the fly's senses must deliver next.
+    Credited "script"."""
+    name = "sectors"
+
+    def __init__(self, weights, sector_range_px=900.0, **kw):
+        super().__init__(brain=object(), readout_fn=lambda r: {}, **kw)
+        self.w = [float(v) for v in weights]
+        self.sector_range_px = sector_range_px
+        self.dir, self.hold = 1, 0
+
+    def reset(self):
+        super().reset()
+        self.dir, self.hold = 1, 0
+
+    def sectors(self, state):
+        p = state["player"]
+        pcx, pcy = p["cx"], p["cy"]
+        out = [0.0] * 8
+        items = [(t["x"], t["y"], max(1.0, math.hypot(t["x"] - pcx, t["y"] - pcy)
+                                      - (40.0 if t.get("from_npc") is not None else 0.0)))
+                 for t, _ in self._threats(state)]
+        cp = self._core_pseudo(state)
+        if cp:
+            c = next(n for n in state["npcs"] if n.get("type") == 398)
+            items.append((c["cx"], c["cy"], cp[1]))
+        for ps, eff, _ in self._surfaces(state):
+            items.append((ps["x"] + 10, ps["y"] + 21, eff))
+        for x, y, d in items:
+            r = max(0.0, 1.0 - d / self.sector_range_px)
+            k = int(((math.atan2(-(y - pcy), x - pcx) + 2 * math.pi) % (2 * math.pi)) / (math.pi / 4)) % 8
+            out[k] += r
+        return [min(v, 2.0) for v in out]
+
+    def act(self, state):
+        p = state.get("player") or {}
+        if not state.get("in_world") or p.get("dead") or "cx" not in p:
+            return dict(RELEASE), {}
+        f = self.sectors(state) + [p.get("vy", 0.0) / 10.0, 1.0]
+        h = sum(a * b for a, b in zip(f, self.w[0:10]))
+        v = sum(a * b for a, b in zip(f, self.w[10:20]))
+        if self.hold > 0:
+            self.hold -= 1
+        elif abs(h) > abs(self.w[20]):
+            self.dir = 1 if h > 0 else -1
+            self.hold = int(abs(self.w[21]) * 30)
+        vert = {"jump": True} if v > 0.3 else ({"down": True} if v < -0.3 else {"up": True})
+        action = {**RELEASE, "left": self.dir < 0, "right": self.dir > 0, **vert}
+        return action, _sources(action, "script")
+
+
 class HumanPolicy:
     """You, playing. Used with the mod's passthrough mode: the harness sends
     no movement, your keyboard drives the character, and this reads back the
@@ -539,4 +711,6 @@ def make_policy(name, seed=0, **kw):
         return FlyPolicy(**kw)
     if name == "human":
         return HumanPolicy()
+    if name == "sectors":
+        return SectorPolicy(**kw)
     raise ValueError(f"unknown policy '{name}'")

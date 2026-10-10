@@ -1,0 +1,62 @@
+{
+  "encoder": {
+    "max_rate_hz": 217.1441,
+    "threat_max_range_px": 1204.7448,
+    "contra_fraction": 0.7315
+  },
+  "decoder": {
+    "steer_margin_hz": 5.8719,
+    "forward_threshold_hz": 68.3231,
+    "backward_threshold_hz": 69.0501,
+    "jump_threshold_hz": 30.6567,
+    "flee_on_hz": 44.1062,
+    "flee_off_hz": 11.7638,
+    "flee_hold_ticks": 0
+  },
+  "policy": {
+    "threat_horizon_ticks": 83,
+    "commit_ticks": 0,
+    "dive_on_hz": 14.3,
+    "above_px": 8.5425,
+    "keep_away_px": 1049.9291,
+    "surface_range_px": 437.1315,
+    "threat_sum_weight": 0.6731
+  },
+  "meta": {
+    "engine": "table",
+    "null": "none",
+    "table": "/home/claude/ff/brain/data/response_table_np_none.npz",
+    "picked": "mean",
+    "train_seeds": 12,
+    "heldout_seeds": 30,
+    "generations": 40,
+    "popsize": 16,
+    "fake_config": {},
+    "whip_strategy": "balanced",
+    "max_seconds": 240.0,
+    "randomize": 0.15,
+    "fake_fit": "2026-10-09 20:29:42",
+    "train_progress_defaults": 0.32299999999999995,
+    "train_progress_best": 0.35775,
+    "heldout": {
+      "defaults": {
+        "progress": 0.31276666666666675,
+        "seconds": 20.35666666666667,
+        "wins": 0
+      },
+      "best": {
+        "progress": 0.3017333333333333,
+        "seconds": 20.033333333333335,
+        "wins": 0
+      },
+      "mean": {
+        "progress": 0.3107333333333333,
+        "seconds": 20.13333333333333,
+        "wins": 0
+      }
+    },
+    "history": "logs/moonlord/cma_20261009_203341_cma_v4_surfaces.jsonl",
+    "finished": "2026-10-09 20:44:58",
+    "seconds": 676
+  }
+}
