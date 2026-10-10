@@ -88,12 +88,13 @@ class ScriptedDodger:
     # the fake still prefers it even with head contact added -- so the fake is
     # not trusted for this knob; the live result wins.
     def __init__(self, boss_keep_away=250.0, ring=(450.0, 900.0), arena_half_width=1300.0,
-                 arena_height=2900.0, beam_width=40.0, dither_cost=0.2):
+                 arena_height=2900.0, beam_width=40.0, dither_cost=0.2, row_spacing_px=384.0, rows=12):
         self.boss_keep_away, self.ring = boss_keep_away, ring
         # Cost of changing (direction, vertical mode) from the last tick. 0.2
         # (default) let it flip direction 1.9x/s live; the human sweeps for
         # seconds at a time (0.27 flips/s, 2026-10-09 large world).
         self.dither_cost = dither_cost
+        self.row_spacing_px, self.rows = row_spacing_px, rows
         self.arena_half_width, self.arena_height = arena_half_width, arena_height
         self.beam_width = beam_width
         self.reset()
@@ -111,10 +112,21 @@ class ScriptedDodger:
         for t in range(1, self.HORIZON + 1):
             vx, vy = movement.step(vx, vy, h, mode, ground)
             ground = False
+            feet0 = y + 21
             x += vx
             y += vy
-            if y > self.floor - 21:  # arena floor (planter rows are passable; the bottom row isn't)
+            if y > self.floor - 21:  # arena floor
                 y, vy = self.floor - 21, 0.0
+            elif vy > 0 and self.row_spacing_px:
+                # Planter rows (live): falling with down held passes through but
+                # the row stops the fall (vy -> ~1); any other mode lands on it.
+                r = int((self.floor - feet0) // self.row_spacing_px)
+                row = self.floor - r * self.row_spacing_px
+                if 1 <= r <= self.rows and feet0 <= row < y + 21:
+                    if mode == "down":
+                        vy = min(vy, 1.0)
+                    else:
+                        y, vy, ground = row - 21, 0.0, True
             pts.append((t, x, y))
         return pts, vy
 

@@ -14,6 +14,12 @@ clean one; v1/v2 were spoiled by the world ceiling.
   nothing / down ("down"): normal gravity ~0.4 px/tick per tick, max fall 10;
       after letting go of a climb at -15, it coasts ~18 tiles higher.
       Down drops through planter rows (nothing lands on them).
+Refit 2026-10-09 evening from ~31k airborne decision pairs in live FIGHTS
+(the probe started every test from rest, which hid this): pressing jump
+while FALLING brakes hard (~-0.8 px/tick per tick; jump+up ~-1.6), so falls
+are stopped quickly; up-only does NOT glide in a fight -- it falls at
+~normal gravity (0.35); live fight vy stays within about +-7 (the old model
+let offline policies reach -14/+10 and outrun the boss vertically).
 Human demo (2026-10-09): airborne 93-98% of the time, constant sideways
 movement (~7 px/tick), alternating diagonal climbs (side+jump) and dives
 (side+down), ~340-455 px from the core.
@@ -27,7 +33,10 @@ CLIMB_ACCEL = 0.5            # jump+up
 CLIMB_MAX = 18.7
 SOFT_CLIMB_ACCEL = 0.13      # jump only (and down+jump)
 GRAVITY = 0.4                # nothing / down
-GLIDE_GRAVITY = 0.1          # up only
+GLIDE_GRAVITY = 0.35         # up only (live fights: ~normal gravity, not a glide)
+JUMP_BRAKE = 0.8             # jump while falling: upward accel (live)
+UP_BRAKE = 1.6               # jump+up while falling (live)
+SOFT_CLIMB_START = 0.28      # jump, rising slower than 6 px/tick (live)
 MAX_FALL = 10.0
 
 MODES = ("up", "jump", "glide", "down")
@@ -60,9 +69,10 @@ def step(vx, vy, h, mode, on_ground):
     if on_ground and mode in ("up", "jump"):
         vy = JUMP_VY
     elif mode == "up":
-        vy = max(-CLIMB_MAX, vy - CLIMB_ACCEL)
+        vy = max(-CLIMB_MAX, vy - (UP_BRAKE if vy > 0 else CLIMB_ACCEL))
     elif mode == "jump":
-        vy = max(-CLIMB_MAX, vy - SOFT_CLIMB_ACCEL)
+        acc = JUMP_BRAKE if vy > 0 else (SOFT_CLIMB_START if vy > -6 else SOFT_CLIMB_ACCEL)
+        vy = max(-CLIMB_MAX, vy - acc)
     elif mode == "glide":
         vy = min(MAX_FALL, vy + (GRAVITY if vy < 0 else GLIDE_GRAVITY))
     else:
