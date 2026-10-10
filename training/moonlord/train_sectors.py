@@ -57,11 +57,16 @@ def main(argv=None):
     ap.add_argument("--heldout-seeds", type=int, default=30)
     ap.add_argument("--randomize", type=float, default=0.15)
     ap.add_argument("--workers", type=int, default=2)
+    ap.add_argument("--name", default="sectors_linear")
+    ap.add_argument("--init", default=None, help="start from this params file's weights")
     args = ap.parse_args(argv)
     from cmaes import CMAES
     train = list(range(1000, 1000 + args.train_seeds))
     held = list(range(5000, 5000 + args.heldout_seeds))
-    es = CMAES(np.full(N_W, 0.5), 0.3, popsize=args.popsize, seed=1)   # unit [0,1] -> weights [-2, 2]
+    x0 = np.full(N_W, 0.5)
+    if args.init:
+        x0 = np.clip((np.asarray(json.loads(Path(args.init).read_text())["weights"]) + 2) / 4, 0, 1)
+    es = CMAES(x0, 0.2 if args.init else 0.3, popsize=args.popsize, seed=1)   # unit [0,1] -> weights [-2, 2]
     best = (-1.0, None)
     t0 = time.time()
     with mp.get_context("spawn").Pool(args.workers, _init, (args.randomize,)) as pool:
@@ -78,7 +83,7 @@ def main(argv=None):
         h = pool.map(_episode, [(best[1], s) for s in held])
     prog, secs = float(np.mean([r[0] for r in h])), float(np.median([r[1] for r in h]))
     print(f"held-out: boss damage {100 * prog:.1f}%  median survival {secs:.1f}s")
-    out = HERE / "params" / "sectors_linear.json"
+    out = HERE / "params" / f"{args.name}.json"
     att = fly_params.load(ATTENTION)
     out.write_text(json.dumps({"encoder": att["encoder"], "decoder": att["decoder"], "policy": att["policy"],
                                "weights": best[1],
