@@ -131,7 +131,7 @@ class FakeMoonLordBridge:
         self.rng = random.Random(self.cfg["seed"])
         c = self.cfg
         self.spawn_x, self.floor = 0.0, c["floor_y"]
-        self.arena = None
+        self.arena = None  # set below, once the player exists
         self.keep_focus = False
         self.passthrough = False
         self.human_keys = {}  # tests: keys a pretend human holds in passthrough mode
@@ -143,6 +143,9 @@ class FakeMoonLordBridge:
         self.minions = 0
         self._summon_hold = 0
         self.px, self.py = self.spawn_x, self.floor - c["player_h"]  # top-left
+        # Marked arena = the spawn point, like a live world after --build-arena
+        # (so the leash and FlyPolicy's looming surfaces see the same box offline).
+        self.arena = (self.px, self.py) if c.get("mark_arena", True) else None
         self.vx = self.vy = 0.0
         self.hp, self.dead, self.dead_ticks = c["player_hp"], False, 0
         self.immune = 0
@@ -319,7 +322,8 @@ class FakeMoonLordBridge:
                 "damage_taken": self.damage_taken, "deaths": self.deaths,
                 "boss_killed": self.boss_killed, "boss_kill_tick": self.boss_kill_tick,
                 "keep_focus": self.keep_focus,
-                "arena": {"x": self.arena[0], "y": self.arena[1]} if self.arena else None}
+                "arena": {"x": self.arena[0], "y": self.arena[1]} if self.arena else None,
+                "full_gravity_y": self.floor - self.cfg["ceiling_px"]}
 
     def _centre(self):
         return self.px + self.cfg["player_w"] / 2, self.py + self.cfg["player_h"] / 2

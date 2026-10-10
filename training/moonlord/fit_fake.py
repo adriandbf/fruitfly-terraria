@@ -38,6 +38,7 @@ KNOBS = [  # (key, low, high, integer?)
     ("bolt_period", 120, 420, True), ("bolt_speed", 6.0, 16.0, False),
     ("sphere_lead", 0.0, 1.0, False), ("sphere_period", 150, 420, True), ("sphere_speed", 5.0, 14.0, False),
     ("eye_turn", 0.01, 0.12, False), ("eye_speed", 6.0, 12.0, False), ("eye_period", 100, 320, True),
+    ("eye_life", 120, 900, True),
     ("contact_radius", 30.0, 80.0, False), ("hand_speed", 4.0, 20.0, False),
 ]
 
@@ -47,7 +48,10 @@ FIT = [(("idle", "", "balanced"), "20261009_155000", "20261009_172000"),
        (("random", "", "balanced"), "20261009_155000", "20261009_172000"),
        (("fly", "vertical_brain_commit10", "balanced"), "20261009_155000", "20261009_172000"),
        (("fly", "tuned_cma_table_defaults", "balanced"), "20261009_155000", "20261009_172000"),
-       (("scripted", "", "balanced"), "20261009_180000", None)]
+       (("scripted", "", "balanced"), "20261009_180000", "20261009_190000"),
+       # 2026-10-09 19:05 batch: the two new behaviours the first fit got wrong
+       (("scripted", "ring650,1050_keep400_dither1", "balanced"), "20261009_190000", None),
+       (("fly", "tuned_cma_v3_keepaway", "balanced"), "20261009_190000", None)]
 HOLDOUT = [(("scripted", "", "nearest"), "20261009_155000", "20261009_172000"),
            (("fly", "vertical_rule_commit10", "balanced"), "20261009_155000", "20261009_172000"),
            (("scripted", "", "balanced"), "20261009_155000", "20261009_172000")]
@@ -130,8 +134,8 @@ def main(argv=None):
     seeds = list(range(9000, 9000 + args.episodes))
     pool = mp.get_context("spawn").Pool(args.workers, _init, (args.table,))
     from cmaes import CMAES
-    from fake_bridge import DEFAULT_CONFIG
-    x0 = cfg_to_unit(DEFAULT_CONFIG)
+    from fake_bridge import DEFAULT_CONFIG, FITTED
+    x0 = cfg_to_unit({**DEFAULT_CONFIG, **FITTED})  # start from the previous fit
     t0 = time.time()
     base = evaluate(pool.map, [{}], refs, seeds)[0]
     print(f"current fake: loss {base[0]:.3f}  [{time.time() - t0:.0f}s]")

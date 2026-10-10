@@ -1,78 +1,93 @@
 {
   "config": {
-    "bolt_lead": 0.4323,
-    "bolt_spread": 0.1222,
+    "bolt_lead": 0.5604,
+    "bolt_spread": 0.1231,
     "bolt_life": 600,
-    "bolt_period": 326,
-    "bolt_speed": 6.0,
-    "sphere_lead": 0.0,
-    "sphere_period": 337,
-    "sphere_speed": 14.0,
-    "eye_turn": 0.0936,
-    "eye_speed": 11.9894,
-    "eye_period": 320,
-    "contact_radius": 46.816,
-    "hand_speed": 16.3858
+    "bolt_period": 420,
+    "bolt_speed": 8.7034,
+    "sphere_lead": 0.3264,
+    "sphere_period": 320,
+    "sphere_speed": 12.5881,
+    "eye_turn": 0.0596,
+    "eye_speed": 12.0,
+    "eye_period": 319,
+    "eye_life": 489,
+    "contact_radius": 34.3624,
+    "hand_speed": 16.8567
   },
-  "loss_fresh": 0.3806488148344602,
-  "survival_error_mean": 0.15982723666806703,
+  "loss_fresh": 0.42986554940323757,
+  "survival_error_mean": 0.10847960331620848,
   "groups": [
     {
       "group": "idle:balanced",
       "live_s": 18.325,
-      "fake_s": 16.3,
+      "fake_s": 20.5,
       "live_left": 0.703,
-      "fake_left": 0.7433125
+      "fake_left": 0.6781875
     },
     {
       "group": "random:balanced",
       "live_s": 27.235,
-      "fake_s": 21.35,
+      "fake_s": 20.15,
       "live_left": 0.5859,
-      "fake_left": 0.73625
+      "fake_left": 0.7396875
     },
     {
       "group": "fly:vertical_brain_commit10:balanced",
       "live_s": 20.015,
-      "fake_s": 20.6,
+      "fake_s": 18.9,
       "live_left": 0.7050000000000001,
-      "fake_left": 0.676375
+      "fake_left": 0.712
     },
     {
       "group": "fly:tuned_cma_table_defaults:balanced",
       "live_s": 26.18,
-      "fake_s": 24.2,
+      "fake_s": 24.0,
       "live_left": 0.656,
-      "fake_left": 0.6925625
+      "fake_left": 0.728375
     },
     {
       "group": "scripted:balanced",
       "live_s": 38.599999999999994,
-      "fake_s": 46.9,
+      "fake_s": 33.25,
       "live_left": 0.4738,
-      "fake_left": 0.4325
+      "fake_left": 0.5656875
+    },
+    {
+      "group": "scripted:ring650,1050_keep400_dither1:balanced",
+      "live_s": 38.974999999999994,
+      "fake_s": 40.45,
+      "live_left": 0.5344,
+      "fake_left": 0.5619375
+    },
+    {
+      "group": "fly:tuned_cma_v3_keepaway:balanced",
+      "live_s": 26.435,
+      "fake_s": 25.75,
+      "live_left": 0.7107,
+      "fake_left": 0.7545
     },
     {
       "group": "scripted:nearest",
       "live_s": 38.135000000000005,
-      "fake_s": 45.7,
+      "fake_s": 33.2,
       "live_left": 0.4617,
-      "fake_left": 0.459625
+      "fake_left": 0.561875
     },
     {
       "group": "fly:vertical_rule_commit10:balanced",
       "live_s": 21.195,
-      "fake_s": 18.6,
+      "fake_s": 17.7,
       "live_left": 0.6658,
-      "fake_left": 0.710875
+      "fake_left": 0.726875
     },
     {
       "group": "scripted:balanced",
       "live_s": 35.765,
-      "fake_s": 46.9,
+      "fake_s": 33.25,
       "live_left": 0.5013,
-      "fake_left": 0.4325
+      "fake_left": 0.5656875
     }
   ],
-  "fitted": "2026-10-09 18:43:22"
+  "fitted": "2026-10-09 20:54:27"
 }

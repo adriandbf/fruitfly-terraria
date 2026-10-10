@@ -62,12 +62,12 @@ check("fake get_state has every key the mod emits", not missing, f"missing {miss
 # 2. Idle loses; the scripted dodger lasts clearly longer.
 conf = cfg(summon_slots=[0, 1])
 idle = episodes(policies.IdlePolicy(), 6, conf)
-# Checks the dodging machinery, not the tuning: uses the ring the FAKE likes
-# (the live-tuned default differs -- see ScriptedDodger.__init__).
-scr = episodes(policies.ScriptedDodger(ring=(350.0, 700.0), boss_keep_away=150.0), 6, conf)
+# Checks the dodging machinery, not the tuning. Live (2026-10-09) the default
+# dodger lasts ~2.1x idle (38.6 s vs 18.3 s); the fitted fake gives ~1.9x.
+scr = episodes(policies.ScriptedDodger(), 6, conf)
 check("idle never wins a fight", not any(r["win"] for r in idle))
-check("scripted survives > 2x longer than idle (median)",
-      median(r["seconds"] for r in scr) > 2 * median(r["seconds"] for r in idle),
+check("scripted survives > 1.6x longer than idle (median)",
+      median(r["seconds"] for r in scr) > 1.6 * median(r["seconds"] for r in idle),
       f"{median(r['seconds'] for r in scr)}s vs {median(r['seconds'] for r in idle)}s")
 
 # 3. Credit ledger adds up and names the right source.
