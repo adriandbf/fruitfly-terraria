@@ -1,0 +1,59 @@
+{
+  "encoder": {
+    "max_rate_hz": 261.9468,
+    "threat_max_range_px": 1121.1576,
+    "contra_fraction": 0.9255
+  },
+  "decoder": {
+    "steer_margin_hz": 8.7909,
+    "forward_threshold_hz": 44.0119,
+    "backward_threshold_hz": 67.7821,
+    "jump_threshold_hz": 5.5129,
+    "flee_on_hz": 50.9917,
+    "flee_off_hz": 27.5592,
+    "flee_hold_ticks": 2
+  },
+  "policy": {
+    "threat_horizon_ticks": 152,
+    "commit_ticks": 30,
+    "dive_on_hz": 92.4986,
+    "above_px": 0.0,
+    "keep_away_px": 798.5041,
+    "surface_range_px": 353.6351,
+    "threat_sum_weight": 0.2074,
+    "multi_threat": true
+  },
+  "weights": [
+    0.3730865268330321,
+    1.5970236221165202,
+    2.0,
+    -0.7745928642383781,
+    -0.7873479523512728,
+    1.0475900894987773,
+    0.9132612772476034,
+    1.693195605288965,
+    -1.6178120756245735,
+    -0.42168910778846813,
+    0.6676318575587268,
+    -0.17271700024578962,
+    -0.9864469825349413,
+    -0.4611543777669196,
+    -2.0,
+    -0.10527724752647316,
+    1.4691068475169624,
+    1.7309959634561585,
+    -1.878357670000021,
+    -0.8620696465108899,
+    -1.0561178178577721,
+    2.0
+  ],
+  "meta": {
+    "what": "SectorPolicy info-ceiling probe, NOT the fly",
+    "train_progress": 0.8430833333333334,
+    "heldout_progress": 0.6284333333333334,
+    "heldout_median_s": 65.85,
+    "randomize": 0.15,
+    "fake_fit": "2026-10-09 22:53:19",
+    "finished": "2026-10-10 12:55:09"
+  }
+}

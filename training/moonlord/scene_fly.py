@@ -215,6 +215,53 @@ def _collect_job(job):
     return np.array(X), np.array(H), np.array(V)
 
 
+def _label_job(job):
+    """DAgger: replay logged fight states (the FLY's own trajectories, live or
+    offline) through the brain, labelled with what the teacher would have
+    done in each state."""
+    engine, null, paths = job
+    from brain_backend import make_brain
+    brain, _ = make_brain(engine, null, seed=0)
+    data, tkw = _teacher()
+    teacher = policies.SectorPolicy(**tkw)
+    fly = SceneFlyPolicy(brain=brain, readout_fn=lambda r: {}, **fly_params.policy_kwargs(data))
+    X, H, V = [], [], []
+    for path in paths:
+        brain.reset_state(seed=0)
+        for line in open(path):
+            rec = json.loads(line)
+            st = rec.get("state")
+            if rec.get("phase") != "play" or not st:
+                continue
+            p = st.get("player") or {}
+            if not st.get("in_world") or p.get("dead") or "cx" not in p:
+                continue
+            f = teacher.sectors(st) + [p.get("vy", 0.0) / 10.0, 1.0]
+            fly.brain_step(st)
+            sp = fly.last_spikes
+            X.append(np.array([brain.rate_for(sp, fid) for fid in ALL_DNS] + [p.get("vy", 0.0)]))
+            H.append(sum(x * w for x, w in zip(f, teacher.w[0:10])))
+            V.append(sum(x * w for x, w in zip(f, teacher.w[10:20])))
+    return np.array(X), np.array(H), np.array(V)
+
+
+def dagger(args):
+    paths = [str(ROOT / p) if not Path(p).is_absolute() else p for p in args.logs]
+    jobs = [(args.engine, args.null, paths[i::args.workers]) for i in range(args.workers)]
+    t0 = time.time()
+    with mp.get_context("spawn").Pool(args.workers) as pool:
+        res = [r for r in pool.map(_label_job, jobs) if len(r[0])]
+    X = np.concatenate([r[0] for r in res])
+    H = np.concatenate([r[1] for r in res])
+    V = np.concatenate([r[2] for r in res])
+    out = Path(args.out)
+    if out.exists() and args.append:
+        d = np.load(out)
+        X, H, V = np.concatenate([d["X"], X]), np.concatenate([d["H"], H]), np.concatenate([d["V"], V])
+    np.savez(out, X=X, H=H, V=V)
+    print(f"{len(X)} labelled ticks -> {out} [{time.time() - t0:.0f}s]")
+
+
 def collect(args):
     seeds = list(range(3000, 3000 + args.fights))
     jobs = [(args.engine, args.null, seeds[i::args.workers], args.randomize) for i in range(args.workers)]
@@ -248,9 +295,12 @@ def fit(args):
     idx = np.random.default_rng(0).permutation(n)
     tr, te = idx[: int(0.8 * n)], idx[int(0.8 * n):]
     lam = args.ridge
-    A = F[tr].T @ F[tr] + lam * np.eye(F.shape[1])
-    wh = np.linalg.solve(A, F[tr].T @ H[tr])
-    wv = np.linalg.solve(A, F[tr].T @ V[tr])
+    # DAgger rows (the fly's own states, appended after --dagger-from) can be up-weighted.
+    sw = np.where(np.arange(n) >= args.dagger_from, args.dagger_weight, 1.0) if args.dagger_from else np.ones(n)
+    Fw = F[tr] * sw[tr, None]
+    A = Fw.T @ F[tr] + lam * np.eye(F.shape[1])
+    wh = np.linalg.solve(A, Fw.T @ H[tr])
+    wv = np.linalg.solve(A, Fw.T @ V[tr])
 
     def r2(w, y):
         pred = F[te] @ w
@@ -320,14 +370,23 @@ def main(argv=None):
         s.add_argument("--randomize", type=float, default=0.15)
         if name == "eval":
             s.add_argument("--params", required=True)
+    dg = sub.add_parser("dagger", help="label logged fly fights with the teacher, through the brain")
+    dg.add_argument("logs", nargs="+")
+    dg.add_argument("--engine", default="np", choices=["fast", "np"])
+    dg.add_argument("--null", default="none")
+    dg.add_argument("--workers", type=int, default=2)
+    dg.add_argument("--out", required=True)
+    dg.add_argument("--append", action="store_true")
     f = sub.add_parser("fit")
     f.add_argument("--data", required=True)
     f.add_argument("--ridge", type=float, default=1.0)
     f.add_argument("--select", default="variance", choices=["variance", "scene"])
     f.add_argument("--k", type=int, default=69)
+    f.add_argument("--dagger-from", type=int, default=0, help="rows from this index on are DAgger (fly-visited) rows")
+    f.add_argument("--dagger-weight", type=float, default=1.0)
     f.add_argument("--use-vy", action="store_true", help="also give the readout the vertical speed directly (not the fly)")
     args = ap.parse_args(argv)
-    {"collect": collect, "fit": fit, "eval": evaluate}[args.cmd](args)
+    {"collect": collect, "fit": fit, "eval": evaluate, "dagger": dagger}[args.cmd](args)
 
 
 if __name__ == "__main__":
