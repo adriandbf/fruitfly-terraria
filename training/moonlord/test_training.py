@@ -101,6 +101,42 @@ check("teacher labels: up counts as climb, down as dive",
 check("balanced accuracy ignores class imbalance",
       abs(imitate.balanced_accuracy([1] * 10, [1] * 9 + [0]) - 0.5) < 1e-9)
 
+# 7. Scene fly: senses -> (stub) brain -> learned readout, keys credited "brain".
+import scene_fly  # noqa: E402
+
+
+class _StubBrain:
+    def __init__(self):
+        self.last = None
+
+    def stimulate(self, ids, rates, duration_ms=100):
+        self.last = dict(zip(ids, rates))
+        return self.last
+
+    def rate_for(self, rates, fid):
+        return 0.0
+
+    def reset_state(self, seed=None):
+        pass
+
+
+from fake_bridge import FakeMoonLordBridge  # noqa: E402
+b = FakeMoonLordBridge({"seed": 3})
+b.request({"cmd": "spawn_npc", "type": 398})
+st = b.request({"cmd": "get_state"})
+sb = _StubBrain()
+n_dn = len(scene_fly.SCENE["readout_dns"])
+ro = {"wh": [0.0] * n_dn + [1.0], "wv": [0.0] * n_dn + [1.0], "thr": 0.5, "hold": 0}
+sp = scene_fly.SceneFlyPolicy(brain=sb, readout_fn=lambda r: {}, readout=ro,
+                              **fly_params.policy_kwargs(fly_params.load(HERE / "params" / "sectors_linear.json")))
+a, src = sp.act(st)
+vs = scene_fly.SCENE["VS"]["left"][0]
+check("scene fly drives the self-motion (VS) cells and a looming population",
+      sb.last.get(vs, 0) > 0 and any(sb.last.get(int(f), 0) > 0 for f in neurons.LC4_LOOMING_LEFT + neurons.LC4_LOOMING_RIGHT),
+      f"VS {sb.last.get(vs)}")
+check("scene fly readout bias -> right + climb, credited brain",
+      a["right"] and a["jump"] and set(src.values()) == {"brain"}, f"{a} {src}")
+
 print()
 print("ALL PASS" if not FAILS else f"{len(FAILS)} FAILED: {FAILS}")
 sys.exit(1 if FAILS else 0)
