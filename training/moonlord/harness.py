@@ -523,7 +523,7 @@ def config_from_loadout(loadout, mode="fight", whip_strategy=None, buffs=True, h
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--policy", default="idle", choices=["idle", "random", "scripted", "fly", "human", "sectors"])
+    ap.add_argument("--policy", default="idle", choices=["idle", "random", "scripted", "fly", "human", "sectors", "senses3"])
     ap.add_argument("--mode", default="fight", choices=["fight", "gym", "free"],
                     help="fight = Moon Lord; gym = projectile volleys; free = nothing spawns (movement demos)")
     ap.add_argument("--episodes", type=int, default=1)
@@ -634,7 +634,23 @@ def main(argv=None):
             kw["boss_keep_away"] = args.dodger_keep_away
         if args.dodger_dither is not None:
             kw["dither_cost"] = args.dodger_dither
-    if args.policy == "fly" and args.params_file and "readout" in json.loads(Path(args.params_file).read_text()):
+    if args.policy == "senses3":
+        # v3-senses teacher (scene3.V3Policy): reads the fly's v3 senses directly, no brain. Not the fly.
+        import scene3
+        import fly_params
+        data = json.loads(Path(args.params_file or HERE / "params" / "senses3_teacher.json").read_text())
+        policy = scene3.V3Policy(data["weights"], fly_params.arena_px(loadout))
+    elif (args.policy == "fly" and args.params_file
+          and "override" in (json.loads(Path(args.params_file).read_text()).get("readout") or {})):
+        # Scene fly v3 (scene_fly3.py)
+        from scene_fly3 import SceneFly3Policy
+        brain_kw = {}
+        if args.fly_null != "none":
+            from brain_backend import make_brain
+            b, _ = make_brain("fast", args.fly_null, seed=0)
+            brain_kw = {"brain": b}
+        policy = SceneFly3Policy(json.loads(Path(args.params_file).read_text())["readout"], **brain_kw)
+    elif args.policy == "fly" and args.params_file and "readout" in json.loads(Path(args.params_file).read_text()):
         # Scene fly (v2 senses + learned readout, scene_fly.py): same brain, richer input types.
         from scene_fly import SceneFlyPolicy
         import fly_params
