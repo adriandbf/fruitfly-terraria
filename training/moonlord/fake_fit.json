@@ -18,10 +18,7 @@
     "leech_speed": 7.7354,
     "leech_turn": 0.0297,
     "leech_grab_ticks": 20,
-    "leech_damage": 149,
-    "dps_near": 2705.8958,
-    "dps_per_px": 0.7337,
-    "dps_min": 869.3884
+    "leech_damage": 149
   },
   "loss_fresh": 0.557579095175199,
   "survival_error_mean": 0.12683769097212,
@@ -104,5 +101,6 @@
       "fake_left": 0.5416875
     }
   ],
-  "fitted": "2026-10-09 22:53:19"
+  "fitted": "2026-10-09 22:53:19",
+  "note": "dps_* removed from the fit 2026-10-10: measured directly from live logs instead (boss DPS by distance: 500px 2640, 750 1990, 1000 1450, 1250 930, 1500+ ~0 -> 3700 - 2.2*d, floor 0)."
 }

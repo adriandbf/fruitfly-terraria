@@ -42,7 +42,8 @@ KNOBS = [  # (key, low, high, integer?)
     ("contact_radius", 30.0, 80.0, False), ("hand_speed", 4.0, 20.0, False),
     ("leech_period", 600, 2000, True), ("leech_speed", 6.0, 14.0, False), ("leech_turn", 0.0, 0.06, False),
     ("leech_grab_ticks", 10, 80, True), ("leech_damage", 50, 200, True),
-    ("dps_near", 2500.0, 4500.0, False), ("dps_per_px", 0.0, 4.0, False), ("dps_min", 300.0, 1500.0, False),
+    # dps_* are NOT fitted: measured straight from live logs (fake_bridge DEFAULT_CONFIG). Fitting them let
+    # the fit trade boss damage at range for attack knobs, and teachers then learned to flee 2000 px away.
 ]
 
 # Live references (2026-10-09). small = small world, Spooky + Berserker's Glove;

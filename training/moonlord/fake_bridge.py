@@ -83,7 +83,7 @@ DEFAULT_CONFIG = {
     # (whip reach / minion travel): idle ~3500 HP/s at ~130 px, scripted ~2900
     # at ~400 px, human ~2200 at ~660 px. Total minion+whip DPS = dps_near -
     # dps_per_px * distance, floored at dps_min; None = the old flat model.
-    "dps_near": 3700.0, "dps_per_px": 2.2, "dps_min": 800.0,
+    "dps_near": 3700.0, "dps_per_px": 2.2, "dps_min": 0.0,   # live 2026-10-10: ~0 beyond ~1500 px (minions/whip out of reach)
     # Live 2026-10-09 (random/scripted/human fights): the boss CHASES -- its core
     # moves ~8 px/tick (as fast as the player flies) and sits ~130 px BELOW
     # the player; the head is ~400 px above the core, hands ~400 px to each side.
