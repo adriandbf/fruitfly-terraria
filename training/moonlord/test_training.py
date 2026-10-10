@@ -137,6 +137,21 @@ check("scene fly drives the self-motion (VS) cells and a looming population",
 check("scene fly readout bias -> right + climb, credited brain",
       a["right"] and a["jump"] and set(src.values()) == {"brain"}, f"{a} {src}")
 
+# 8. v3 senses: time to contact, direction, beam.
+import scene3  # noqa: E402
+base = {"in_world": True, "player": {"cx": 0.0, "cy": 0.0, "x": -10.0, "y": -21.0, "vx": 0.0, "vy": 0.0},
+        "npcs": [], "episode": {}}
+fast_far = {**base, "projectiles": [{"type": 462, "cx": 400.0, "cy": 0.0, "vx": -16.0, "vy": 0.0}]}
+slow_near = {**base, "projectiles": [{"type": 454, "cx": 150.0, "cy": 0.0, "vx": -2.0, "vy": 0.0}]}
+rf, rs = scene3.scene_rates_v3(fast_far), scene3.scene_rates_v3(slow_near)
+check("v3: a fast bolt 400 px out looms more than a slow sphere 150 px out (time to contact)",
+      rf[("LC11", 1)] > rs[("LC11", 1)] > 0, f"{rf[('LC11', 1)]:.0f} vs {rs[('LC11', 1)]:.0f} Hz")
+below = scene3.scene_rates_v3({**base, "projectiles": [{"type": 462, "cx": -50.0, "cy": 300.0, "vx": 0.0, "vy": -12.0}]})
+check("v3: a projectile rising from below-left drives LC12 left, not LC11",
+      below[("LC12", -1)] > 0 and below[("LC11", -1)] == 0 and below[("LC12", 1)] == 0)
+beam = scene3.scene_rates_v3({**base, "projectiles": [{"type": 455, "cx": -600.0, "cy": -400.0, "vx": 0.83, "vy": 0.56}]})
+check("v3: a deathray passing near drives LC22", max(beam[("LC22", -1)], beam[("LC22", 1)]) > 0)
+
 print()
 print("ALL PASS" if not FAILS else f"{len(FAILS)} FAILED: {FAILS}")
 sys.exit(1 if FAILS else 0)
