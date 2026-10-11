@@ -340,11 +340,29 @@ namespace FruitFlyBridge
             int tx = (int)(c0.X / 16f), ty = (int)(c0.Y / 16f);
             int graves = Setup.ClearTombstones(tx - 600, ty - 300, tx + 600, ty + 100);
 
+            // Items on the ground (boss drops, coins dropped on death, anything
+            // knocked out of the inventory): remove them all, every reset
+            // (user, 2026-10-11), unless {clear_items: false}.
+            int itemsRemoved = 0;
+            if ((bool?)req["clear_items"] ?? true)
+            {
+                for (int i = 0; i < Main.maxItems; i++)
+                {
+                    if (Main.item[i] != null && Main.item[i].active)
+                    {
+                        Main.item[i].TurnToAir();
+                        Main.item[i].active = false;
+                        itemsRemoved++;
+                    }
+                }
+            }
+
             BridgeSystem.ReleaseAll();
             Episode.Reset();
             return new JObject
             {
                 ["ok"] = true,
+                ["items_removed"] = itemsRemoved,
                 ["npcs_removed"] = npcsRemoved,
                 ["projectiles_removed"] = projRemoved,
                 ["moved_to_arena"] = moved,
@@ -496,6 +514,23 @@ namespace FruitFlyBridge
             var p = Main.LocalPlayer;
             var unknown = new JArray();
 
+            // reset_inventory: empty every inventory slot (hotbar, main, coins,
+            // ammo, the item held on the cursor) and the trash first, so the
+            // character starts each fight with exactly the loadout (user,
+            // 2026-10-11).
+            int cleared = 0;
+            if ((bool?)req["reset_inventory"] ?? false)
+            {
+                for (int i = 0; i < p.inventory.Length; i++)
+                {
+                    if (p.inventory[i] != null && !p.inventory[i].IsAir)
+                        cleared++;
+                    p.inventory[i] = new Item();
+                }
+                p.trashItem = new Item();
+                Main.mouseItem = new Item();
+            }
+
             if (req["armor"] is JArray armor)
             {
                 for (int i = 0; i < Math.Min(3, armor.Count); i++)
@@ -536,7 +571,7 @@ namespace FruitFlyBridge
                 p.statLife = p.statLifeMax;
                 p.statMana = p.statManaMax;
             }
-            return new JObject { ["ok"] = unknown.Count == 0, ["unknown_items"] = unknown,
+            return new JObject { ["ok"] = unknown.Count == 0, ["unknown_items"] = unknown, ["slots_cleared"] = cleared,
                                  ["error"] = unknown.Count == 0 ? null : "some item names were not found (slots left empty)" };
         }
 

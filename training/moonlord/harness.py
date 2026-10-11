@@ -4,7 +4,8 @@ back to back with nobody at the keyboard, and scores each one.
 One episode:
   1. wait until the player is alive (the game's own respawn after a death)
   2. reset_episode: despawn hostiles and hostile projectiles, heal, clear
-     debuffs, move to the arena mark, zero the mod's counters
+     debuffs, remove items on the ground, move to the arena mark, zero the
+     mod's counters; then the inventory is wiped and set back to the loadout
   3. SETUP (scripted, logged as "setup", never credited to any policy):
      select each summon staff and hold `use` until the minion slots fill
      then select the whip slot (if the loadout has one)
@@ -385,7 +386,12 @@ def run_episode(bridge, policy, cfg, episode_seed, log_file=None):
     bridge.request({"cmd": "set_action", **RELEASE})
     wait_alive(bridge, clock, cfg["respawn_timeout_s"])
     _ok(bridge.request({"cmd": "reset_episode"}), "reset_episode")
-    if cfg.get("restock_potions"):
+    if cfg.get("loadout_items"):
+        # Inventory back to exactly the loadout every fight (user, 2026-10-11): wipe
+        # it, then hotbar, inventory (potions, platinum), armour and accessories.
+        _ok(bridge.request({"cmd": "equip_loadout", "reset_inventory": True, **cfg["loadout_items"]}),
+            "reset inventory")
+    elif cfg.get("restock_potions"):
         _ok(bridge.request({"cmd": "equip_loadout",
                             "inventory": [{"name": cfg["heal_potion"], "stack": cfg["restock_potions"]}]}),
             "restock potions")
@@ -612,6 +618,9 @@ def config_from_loadout(loadout, mode="fight", whip_strategy=None, buffs=True, h
     cfg["whip_slot"] = loadout.get("whip_slot")
     cfg["whip_strategy"] = whip_strategy or loadout.get("whip_strategy", "nearest")
     cfg["whip_assist"] = bool(loadout.get("whip_assist")) and whip_assist
+    items = {k: loadout[k] for k in ("armor", "accessories", "hotbar", "inventory") if k in loadout}
+    if items:
+        cfg["loadout_items"] = items
     if buffs:
         cfg["buffs"] = list(loadout.get("buffs", []))
         cfg["buff_seconds"] = loadout.get("buff_seconds", cfg["buff_seconds"])
