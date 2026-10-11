@@ -207,10 +207,10 @@ class FakeMoonLordBridge:
         self.nurse_hp = 250
         return {"ok": True, "hp": 250}
 
-    # House layout as NurseBay.cs v3: bed (spawn) 7 tiles left of the divider
-    # column, Nurse 2 tiles right of it; talking range = Player.tileRangeX/Y (5/4 tiles).
+    # House layout as NurseBay.cs v4: one room, bed (spawn) 7 tiles left of the
+    # right wall column, Nurse at 3 left; talking range = Player.tileRangeX/Y (5/4 tiles).
     def _nurse_pos(self):
-        return self.house[0] + 2.5 * 16, self.house[1] - 21
+        return self.house[0] - 2.5 * 16, self.house[1] - 21
 
     def _cmd_nurse_talk(self, p):
         if getattr(self, "house", None) is None:

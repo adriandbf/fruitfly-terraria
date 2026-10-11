@@ -19,22 +19,18 @@ namespace FruitFlyBridge
     ///
     /// Layout (tiles; F = house floor row, X = house centre column):
     ///
-    /// Layout v3 (2026-10-11). Live: v2's Nurse room (4 wide) wasn't a valid
-    /// house but the fly room was, so the game's housing moved the Nurse INTO
-    /// the fly room mid-fight, where the Moon Lord hit her. Now the Nurse's
-    /// room is the only valid NPC house (size, walls, light, chair, table,
-    /// platform entrance in her roof), and the fly room is a bedroom only --
-    /// enough for the bed's spawn (enclosed, walls, 60+ tiles) but with no
-    /// chair/table, so no NPC can be assigned there. Tiles; F = floor row,
-    /// X = divider column:
+    /// Layout v4 (user, 2026-10-11): ONE room. The Nurse lives with the bed,
+    /// unprotected -- the Moon Lord can kill her, which ends Nurse visits for
+    /// that fight (she is respawned at every reset). (v3 boxed her in; v2's
+    /// separate box was an invalid house, so the game moved her out anyway.)
+    /// Tiles; F = floor row, X = right wall column:
     ///
-    ///                  #=##        = platforms   # = gray brick
-    ///   shaft X-10..X-1 |  |       Nurse room 4x9, valid house
-    ///   #==========#    #          (entrance: one platform in her roof)
-    ///   #  fly room  # (N) #       fly room 10x6, bed + torch only
-    ///   #   [bed]    #ch tbl#
-    ///   ####################  row F
-    ///   X-11        X     X+5
+    ///   shaft X-10..X-1 (cleared up to the arena floor, platform cap there)
+    ///   #==========#          = platforms   # = gray brick
+    ///   #  [bed] N #          10x6 room, valid house: walls, 2 torches,
+    ///   #  [bed]ch tbl#       bed, chair, table; platform roof = entrance
+    ///   ############  row F
+    ///   X-11       X
     ///
     /// The heal itself (nurse_heal) does what the Nurse's "Heal" chat button
     /// does -- same price rule, charged with BuyItem, same debuff removal --
@@ -89,23 +85,22 @@ namespace FruitFlyBridge
             Setup.ClearArea(X - 12, F - 11, X + 8, F);
             Setup.ClearArea(X - 10, surface, X - 1, F - 8);
 
-            // Shell.
-            for (int x = X - 11; x <= X + 5; x++)
+            // Shell: one room, the Nurse lives with the bed (user, 2026-10-11: she
+            // is exposed to the fight on purpose -- if she dies, no more Nurse
+            // visits that fight; she is respawned at the next reset).
+            for (int x = X - 11; x <= X; x++)
                 Solid(x, F);
             for (int y = F - 7; y <= F - 1; y++)
-                Solid(X - 11, y);
-            for (int y = F - 10; y <= F - 1; y++)
             {
-                Solid(X, y);        // divider: the Nurse stays on her side
-                Solid(X + 5, y);
+                Solid(X - 11, y);
+                Solid(X, y);
             }
+            // Fill in the space an earlier layout used for a separate Nurse room.
+            for (int x = X + 1; x <= X + 5; x++)
+                for (int y = F - 10; y <= F; y++)
+                    Solid(x, y);
             for (int x = X - 10; x <= X - 1; x++)
-                Platform(x, F - 7); // fly room roof: fly straight up through it
-            for (int x = X + 1; x <= X + 4; x++)
-                if (x == X + 2)
-                    Platform(x, F - 10);   // her house's entrance (housing needs one); she can't climb 9 tiles to it
-                else
-                    Solid(x, F - 10);      // Nurse roof
+                Platform(x, F - 7); // roof: platforms, fly straight up through it
             // Cap the shaft where it meets the arena floor with platforms (passable
             // both ways), so the arena floor stays walkable.
             for (int x = X - 10; x <= X - 1; x++)
@@ -117,18 +112,15 @@ namespace FruitFlyBridge
                 Solid(X, y);
             }
 
-            // Background walls, light, furniture (a valid house in both rooms).
+            // Background walls, light, furniture: a valid house (bed spawn + the Nurse's home).
             for (int x = X - 10; x <= X - 1; x++)
                 for (int y = F - 6; y <= F - 1; y++)
                     WorldGen.PlaceWall(x, y, WallID.GrayBrick, true);
-            for (int x = X + 1; x <= X + 4; x++)
-                for (int y = F - 9; y <= F - 1; y++)
-                    WorldGen.PlaceWall(x, y, WallID.GrayBrick, true);
             WorldGen.PlaceTile(X - 1, F - 5, TileID.Torches, true);
-            WorldGen.PlaceTile(X + 4, F - 5, TileID.Torches, true);
+            WorldGen.PlaceTile(X - 10, F - 5, TileID.Torches, true);
             bool bed = WorldGen.PlaceObject(X - 8, F - 1, TileID.Beds, true, 0);       // X-9..X-6
-            WorldGen.PlaceObject(X + 1, F - 1, TileID.Chairs, true, 0);                // Nurse's chair
-            WorldGen.PlaceObject(X + 3, F - 1, TileID.Tables, true, 0);                // X+2..X+4
+            WorldGen.PlaceObject(X - 4, F - 1, TileID.Chairs, true, 0);
+            WorldGen.PlaceObject(X - 2, F - 1, TileID.Tables, true, 0);                // X-3..X-1
             WorldGen.RangeFrame(X - 13, Math.Min(surface, F - 11) - 1, X + 9, F + 1);
 
             House = new Point(X, F);
@@ -138,8 +130,7 @@ namespace FruitFlyBridge
             {
                 ["ok"] = bed && spawn.HasValue,
                 ["error"] = !bed ? "bed could not be placed" : (!spawn.HasValue ? SpawnError : null),
-                ["fly_room_valid"] = WorldGen.StartRoomCheck(X - 5, F - 3),
-                ["nurse_room_valid"] = WorldGen.StartRoomCheck(X + 2, F - 4) && WorldGen.RoomNeeds(NPCID.Nurse),
+                ["room_valid"] = WorldGen.StartRoomCheck(X - 5, F - 3) && WorldGen.RoomNeeds(NPCID.Nurse),
                 ["house"] = new JObject { ["x"] = X, ["y"] = F },
                 ["shaft_top_y"] = surface,
                 ["spawn"] = spawn.HasValue ? new JObject { ["x"] = spawn.Value.X, ["y"] = spawn.Value.Y } : null,
@@ -203,16 +194,16 @@ namespace FruitFlyBridge
             bool spawned = false;
             if (n == null)
             {
-                int idx = NPC.NewNPC(new EntitySource_Misc("FruitFlyBridge.NurseBay"), (h.X + 2) * 16 + 8, (h.Y - 1) * 16, NPCID.Nurse);
+                int idx = NPC.NewNPC(new EntitySource_Misc("FruitFlyBridge.NurseBay"), (h.X - 3) * 16 + 8, (h.Y - 1) * 16, NPCID.Nurse);
                 if (idx < 0 || idx >= Main.maxNPCs)
                     return new JObject { ["ok"] = false, ["error"] = "could not spawn the Nurse" };
                 n = Main.npc[idx];
                 spawned = true;
             }
-            n.position = new Vector2((h.X + 2) * 16 + 8 - n.width / 2f, h.Y * 16 - n.height);
+            n.position = new Vector2((h.X - 3) * 16 + 8 - n.width / 2f, h.Y * 16 - n.height);
             n.velocity = Vector2.Zero;
             n.life = n.lifeMax;
-            n.homeTileX = h.X + 2;
+            n.homeTileX = h.X - 3;
             n.homeTileY = h.Y - 1;
             n.homeless = false;
             return new JObject { ["ok"] = true, ["spawned"] = spawned, ["hp"] = n.life, ["max_hp"] = n.lifeMax };
