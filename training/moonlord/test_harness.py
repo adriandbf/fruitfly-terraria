@@ -278,6 +278,17 @@ out, changed = harness.leash(st, {"jump": True}, {"half_width_tiles": 100, "rows
                                                    "row_spacing_tiles": 24, "max_rise_tiles": 280})
 check("leash stops climbing at the full-gravity line", not out["jump"] and changed == ["jump"], f"{out} {changed}")
 
+# 15c. Nurse protocol: low HP + potion sickness -> mirror home -> Nurse heal -> fly out.
+b = FakeMoonLordBridge({"seed": 4})
+b.request({"cmd": "build_nurse_house", "depth_tiles": 40})
+b.potion_delay = 10 ** 6   # potion-sick the whole fight
+row = harness.run_episode(b, policies.IdlePolicy(),
+                          cfg(heal_at_hp=0, whip_slot=2, max_seconds={"fight": 60.0},
+                              nurse={"enabled": True, "hp_below": 450, "mirror_slot": 8, "exit_ticks": 10,
+                                     "mirror_timeout_ticks": 40}), 4)
+check("Nurse protocol: mirrors home and heals", row["nurse_trips"] >= 1 and row["ledger"].get("nurse", 0) > 0,
+      f"trips {row['nurse_trips']} ledger {row['ledger']}")
+
 # 16. Human demos: passthrough on during the episode, off after; the human's
 #     keys are logged and credited "human"; free mode spawns nothing.
 b = FakeMoonLordBridge({"seed": 9})

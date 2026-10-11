@@ -88,6 +88,7 @@ DEFAULT_CONFIG = {
     # moves ~8 px/tick (as fast as the player flies) and sits ~130 px BELOW
     # the player; the head is ~400 px above the core, hands ~400 px to each side.
     "boss_height": -130.0,        # core this far above the player (negative = below)
+    "teleport_px": 2350.0,        # core teleports onto a player this far away (live logs)
     "boss_drift": 8.0,            # px/tick chase speed of the core: a VECTOR speed (live: |v| ~7.9 in every
                                   # direction), not 8 per axis -- the old per-axis clamp made the boss 11 px/tick
                                   # on diagonals, so climbing/diving away never paid off offline
@@ -145,7 +146,8 @@ class FakeMoonLordBridge:
         self.human_keys = {}  # tests: keys a pretend human holds in passthrough mode
         self.action = {}
         self.selected = 0
-        self.hotbar = {0: "StardustDragonStaff", 1: "EmpressBlade", 2: "RainbowWhip"}
+        self.hotbar = {0: "StardustDragonStaff", 1: "EmpressBlade", 2: "RainbowWhip", 8: "MagicMirror"}
+        self._mirror_hold = 0
         self.whip_bonus = 1.25  # assumed minion DPS multiplier while the whip keeps tagging
         self.max_minions = 10  # measured: 9 with Hallowed, 10 with Spooky (live 2026-10-09)
         self.minions = 0
@@ -190,6 +192,36 @@ class FakeMoonLordBridge:
 
     def _cmd_get_episode(self, _):
         return {"ok": True, "episode": self._episode()}
+
+    # ---- Nurse protocol (NurseBay.cs) -------------------------------------
+    def _cmd_build_nurse_house(self, p):
+        self.house = (self.spawn_x, self.floor + 16 * p.get("depth_tiles", 40))
+        self.nurse_hp = 250
+        return {"ok": True, "house": {"x": int(self.house[0] // 16), "y": int(self.house[1] // 16)}}
+
+    def _cmd_nurse_ready(self, p):
+        if getattr(self, "house", None) is None:
+            if p.get("x") is None:
+                return {"ok": False, "error": "no nurse house"}
+            self.house = (p["x"] * 16.0, p["y"] * 16.0)
+        self.nurse_hp = 250
+        return {"ok": True, "hp": 250}
+
+    def _cmd_nurse_heal(self, p):
+        if getattr(self, "house", None) is None:
+            return {"ok": False, "error": "no Nurse"}
+        pcx, pcy = self._centre()
+        if abs(pcx - self.house[0]) > 15 * 16 or abs(pcy - self.house[1]) > 15 * 16:
+            return {"ok": False, "error": "too far from the Nurse"}
+        missing = self.cfg["player_hp"] - self.hp
+        self.hp = self.cfg["player_hp"]
+        return {"ok": True, "healed": int(missing), "price": int(missing) * 200}
+
+    def _nurse_json(self):
+        if getattr(self, "house", None) is None:
+            return None
+        return {"x": int(self.house[0] // 16), "y": int(self.house[1] // 16), "nurse_alive": True,
+                "nurse_hp": getattr(self, "nurse_hp", 250)}
 
     def _cmd_set_arena(self, p):
         self.arena = (p.get("x", self.px), p.get("y", self.py))
@@ -333,7 +365,8 @@ class FakeMoonLordBridge:
                 "boss_killed": self.boss_killed, "boss_kill_tick": self.boss_kill_tick,
                 "keep_focus": self.keep_focus,
                 "arena": {"x": self.arena[0], "y": self.arena[1]} if self.arena else None,
-                "full_gravity_y": self.floor - self.cfg["ceiling_px"]}
+                "full_gravity_y": self.floor - self.cfg["ceiling_px"],
+                "nurse_house": self._nurse_json()}
 
     def _centre(self):
         return self.px + self.cfg["player_w"] / 2, self.py + self.cfg["player_h"] / 2
@@ -416,6 +449,14 @@ class FakeMoonLordBridge:
             self.py, self.vy = top, 0.0  # world height limit
 
     def _summon(self):
+        # Magic Mirror: holding use for 90 ticks teleports to the spawn bed (the Nurse house).
+        if self.hotbar.get(self.selected) == "MagicMirror":
+            self._mirror_hold = self._mirror_hold + 1 if self.action.get("use") else 0
+            if self._mirror_hold >= 90 and getattr(self, "house", None) is not None:
+                self.px, self.py = self.house[0] - self.cfg["player_w"] / 2, self.house[1] - self.cfg["player_h"]
+                self.vx = self.vy = 0.0
+                self._mirror_hold = 0
+            return
         # Holding `use` with a summon staff selected adds a minion every 30 ticks.
         if self.action.get("use") and self.selected in self.hotbar and not self._whip_selected():
             self._summon_hold += 1
@@ -432,6 +473,11 @@ class FakeMoonLordBridge:
         pcx, pcy = self._centre()
         tx, ty = pcx - b["cx"], (pcy - c["boss_height"]) - b["cy"]
         d = math.hypot(tx, ty)
+        if d > c["teleport_px"]:
+            # Live (28 cases in the logs): with the player ~2,300-2,400 px away the
+            # core jumps onto them.
+            b["cx"], b["cy"] = pcx, pcy - c["boss_height"]
+            tx = ty = d = 0.0
         step = min(c["boss_drift"], d)
         b["vx"], b["vy"] = (tx / d * step, ty / d * step) if d > 1e-9 else (0.0, 0.0)
         b["cx"] += b["vx"]

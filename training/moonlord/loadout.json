@@ -38,13 +38,20 @@
     null,
     null,
     null,
-    null,
+    [
+      "MagicMirror",
+      50
+    ],
     "SuperHealingPotion"
   ],
   "inventory": [
     {
       "name": "SuperHealingPotion",
       "stack": 10
+    },
+    {
+      "name": "PlatinumCoin",
+      "stack": 999
     }
   ],
   "max_stats": true,
@@ -94,5 +101,15 @@
   },
   "heal_at_hp": 300,
   "restock_potions": 10,
-  "heal_potion": "SuperHealingPotion"
+  "heal_potion": "SuperHealingPotion",
+  "nurse": {
+    "_comment": "Nurse healing protocol (harness --nurse; house: harness --build-nurse-house). User design 2026-10-11.",
+    "hp_below": 200,
+    "mirror_slot": 8,
+    "depth_tiles": 40,
+    "offset_x_tiles": 0,
+    "exit_ticks": 25,
+    "mirror_timeout_ticks": 40,
+    "platinum": 999
+  }
 }

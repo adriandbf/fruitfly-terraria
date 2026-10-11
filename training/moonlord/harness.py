@@ -316,6 +316,60 @@ def _trim_state(st):
     return {k: v for k, v in st.items() if k != "tiles"}
 
 
+def nurse_step(bridge, st, cfg, ns, log):
+    """Nurse healing protocol (user design 2026-10-11), a scripted assist like
+    the potion heal: when HP < hp_below and potion sickness is on, use the
+    Magic Mirror (back to the bed under the arena), get the Nurse's heal, then
+    fly straight up the shaft. Returns None when it isn't driving this tick,
+    else 1 on the tick a heal lands (0 otherwise)."""
+    n = cfg["nurse"]
+    p = st.get("player") or {}
+    house = (st.get("episode") or {}).get("nurse_house")
+    phase = ns.get("phase")
+    if phase is None:
+        if (house and house.get("nurse_alive") and 0 < p.get("hp", 0) < n.get("hp_below", 200)
+                and p.get("potion_delay", 0) > 0 and not p.get("dead")):
+            bridge.request({"cmd": "select_slot", "slot": n.get("mirror_slot", 8)})
+            ns.update(phase="mirror", t=0, x0=p.get("cx"), y0=p.get("cy"))
+            phase = "mirror"
+        else:
+            return None
+    ns["t"] = ns.get("t", 0) + 1
+    if phase == "mirror":
+        moved = math.hypot(p.get("cx", 0) - ns["x0"], p.get("cy", 0) - ns["y0"]) > 600
+        if moved:
+            ns.update(phase="heal", t=0)
+            phase = "heal"
+        elif ns["t"] > n.get("mirror_timeout_ticks", 40):
+            ns.clear()
+            if cfg.get("whip_slot") is not None:
+                bridge.request({"cmd": "select_slot", "slot": cfg["whip_slot"]})
+            return None
+        else:
+            ns["last_action"] = {**RELEASE, "use": True}
+            bridge.request({"cmd": "set_action", **RELEASE, "use": True})
+            return 0
+    if phase == "heal":
+        r = bridge.request({"cmd": "nurse_heal"})
+        ns.update(phase="exit", t=0, heal=r)
+        healed = 1 if r.get("ok") and r.get("healed", 0) > 0 else 0
+        log({"phase": "nurse_heal", "result": r})
+        if cfg.get("whip_slot") is not None:
+            bridge.request({"cmd": "select_slot", "slot": cfg["whip_slot"]})
+        ns["last_action"] = {**RELEASE, "jump": True, "up": True}
+        bridge.request({"cmd": "set_action", **RELEASE, "jump": True, "up": True})
+        return healed
+    if phase == "exit":
+        if ns["t"] > n.get("exit_ticks", 25):
+            ns.clear()
+            return None
+        ns["last_action"] = {**RELEASE, "jump": True, "up": True}
+        bridge.request({"cmd": "set_action", **RELEASE, "jump": True, "up": True})
+        return 0
+    ns.clear()
+    return None
+
+
 def run_episode(bridge, policy, cfg, episode_seed, log_file=None):
     simulated = getattr(bridge, "simulated", False)
     clock = Clock(simulated)
@@ -337,6 +391,17 @@ def run_episode(bridge, policy, cfg, episode_seed, log_file=None):
     if cfg.get("buffs"):
         _ok(bridge.request({"cmd": "apply_buffs", "names": cfg["buffs"], "seconds": cfg["buff_seconds"]}),
             "apply_buffs")
+    nurse = cfg.get("nurse") or {}
+    if nurse.get("enabled"):
+        # Nurse protocol: keep the money stocked (slot after the potions) and the
+        # Nurse alive in her box, spawn on the bed.
+        _ok(bridge.request({"cmd": "equip_loadout", "inventory": [
+            {"name": cfg["heal_potion"], "stack": cfg.get("restock_potions") or 10},
+            {"name": "PlatinumCoin", "stack": nurse.get("platinum", 999)}]}), "restock coins")
+        house = nurse.get("house") or {}
+        r = bridge.request({"cmd": "nurse_ready", **({"x": house["x"], "y": house["y"]} if house else {})})
+        if not r.get("ok"):
+            print(f"  nurse_ready: {r.get('error')} -- protocol inactive this fight", flush=True)
     setup_ticks = summon_minions(bridge, clock, cfg["summon_slots"], cfg["summon_hold_ticks"], log)
     if cfg.get("whip_slot") is not None:
         _ok(bridge.request({"cmd": "select_slot", "slot": cfg["whip_slot"]}), "select whip slot")
@@ -354,6 +419,7 @@ def run_episode(bridge, policy, cfg, episode_seed, log_file=None):
 
     ledger = {"none": 0}
     heals = 0  # heal-assist potions drunk (kept out of the key ledger)
+    nstate, nurse_trips = {}, 0   # Nurse protocol state (nurse_step)
     tick, outcome = 0, None
     wall_start = time.monotonic()
     start_ticks = None
@@ -388,6 +454,16 @@ def run_episode(bridge, policy, cfg, episode_seed, log_file=None):
             gym_volley(bridge, rng, cfg)
             next_volley += cfg["gym_period_s"]
 
+        if nurse.get("enabled"):
+            done = nurse_step(bridge, st, cfg, nstate, log)
+            if done is not None:   # the protocol drove this tick
+                ledger["nurse"] = ledger.get("nurse", 0) + 1
+                nurse_trips += done
+                log({"phase": "play", "tick": tick, "elapsed_s": elapsed, "action": nstate.get("last_action"),
+                     "sources": {"nurse": "assist"}, "state": _trim_state(st), "nurse": nstate.get("phase")})
+                tick += 1
+                clock.end_tick()
+                continue
         action, sources = policy.act(st)
         leashed = []
         if not human:  # a human demo is never overridden (passthrough ignores movement anyway)
@@ -435,6 +511,7 @@ def run_episode(bridge, policy, cfg, episode_seed, log_file=None):
         "win": outcome == "win", "survived": outcome in ("win", "survived", "timeout"),
         "seconds": round(elapsed, 2), "ticks": tick, "setup_ticks": setup_ticks,
         "hits": ep.get("hits"), "damage_taken": ep.get("damage_taken"), "heals": heals,
+        "nurse_trips": nurse_trips,
         "damage_per_min": round(60.0 * (ep.get("damage_taken") or 0) / max(elapsed, 1e-6), 1),
         "boss_hp_left": boss.get("hp") if boss else (0 if outcome == "win" else None),
         "boss_parts_hp": parts_hp if parts else (0 if outcome == "win" else None),
@@ -466,6 +543,7 @@ def _mean_frac(rows):
 
 
 MARK_FILE = LOG_DIR / "arena_mark.json"
+NURSE_FILE = LOG_DIR / "nurse_house.json"
 
 
 def _world_id(ep):
@@ -535,6 +613,10 @@ def main(argv=None):
     ap.add_argument("--mark-arena", action="store_true", help="set the arena to where the player stands, then exit")
     ap.add_argument("--setup-character", action="store_true",
                     help="give the loaded character the loadout.json gear and max stats, then exit")
+    ap.add_argument("--build-nurse-house", action="store_true",
+                    help="build the Nurse house under the arena (loadout nurse.depth_tiles / offset_x_tiles)")
+    ap.add_argument("--nurse", action="store_true",
+                    help="Nurse healing protocol on (Magic Mirror home + Nurse heal when HP < nurse.hp_below and potion-sick)")
     ap.add_argument("--build-arena", action="store_true",
                     help="place loadout.json's platform rows around the player and mark the arena, then exit")
     ap.add_argument("--clear-tombstones", action="store_true",
@@ -574,6 +656,16 @@ def main(argv=None):
     if args.clear_tombstones:
         print(_ok(bridge.request({"cmd": "clear_tombstones"}), "clear_tombstones"))
         return []
+    if args.build_nurse_house:
+        nl = loadout.get("nurse") or {}
+        r = bridge.request({"cmd": "build_nurse_house", "depth_tiles": nl.get("depth_tiles", 40),
+                            "offset_x_tiles": nl.get("offset_x_tiles", 0)})
+        print(json.dumps(r, indent=1))
+        if r.get("ok") or r.get("house"):
+            NURSE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            NURSE_FILE.write_text(json.dumps({"house": r["house"]}))
+        bridge.close()
+        return []
     if args.setup_character or args.build_arena:
         if args.setup_character:
             req = {k: loadout.get(k) for k in ("armor", "accessories", "hotbar", "inventory", "max_stats")}
@@ -592,6 +684,12 @@ def main(argv=None):
     cfg = config_from_loadout(loadout, args.mode, args.whip_strategy,
                               buffs=not args.no_loadout_buffs, heal=not args.no_heal,
                               whip_assist=not args.no_whip_assist)
+    if args.nurse:
+        nurse = dict(loadout.get("nurse") or {})
+        saved = NURSE_FILE.exists() and json.loads(NURSE_FILE.read_text())
+        if saved:
+            nurse["house"] = saved.get("house")
+        cfg["nurse"] = {**nurse, "enabled": True}
     if args.max_seconds:
         cfg["max_seconds"] = {args.mode: args.max_seconds}
     if args.summon_slots:
@@ -683,6 +781,7 @@ def main(argv=None):
                 row["log"] = str(log_path.relative_to(ROOT))
             row["run"] = stamp
             row["whip_strategy"] = cfg["whip_strategy"]
+            row["nurse"] = bool(cfg.get("nurse"))
             if args.policy == "scripted" and (args.dodger_ring or args.dodger_keep_away is not None
                                               or args.dodger_dither is not None):
                 row["variant"] = (f"ring{args.dodger_ring or '450,900'}_keep{args.dodger_keep_away or 250:g}"
