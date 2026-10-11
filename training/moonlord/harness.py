@@ -318,6 +318,24 @@ def _trim_state(st):
     return {k: v for k, v in st.items() if k != "tiles"}
 
 
+def _house_zone(p, house):
+    """Where the player is relative to the Nurse house (NurseBay.cs v4; tiles,
+    X = right wall column, F = floor row): "room" (inside the bed room),
+    "shaft" (between the room's roof and the arena floor, incl. standing on the
+    roof), else None."""
+    if not house or "cx" not in p:
+        return None
+    tx, ty = p["cx"] / 16 - house["x"], p["cy"] / 16 - house["y"]
+    if not -11.5 < tx < 0.5:
+        return None
+    top = house.get("shaft_top_y", house["y"] - 40) - house["y"]   # arena floor row, relative
+    if -7 < ty <= 0.5:
+        return "room"
+    if top + 0.5 < ty <= -7:
+        return "shaft"
+    return None
+
+
 def nurse_step(bridge, st, cfg, ns, log):
     """Nurse healing protocol (user design 2026-10-11), a scripted assist like
     the potion heal: when HP < hp_below and potion sickness is on, use the
@@ -339,6 +357,14 @@ def nurse_step(bridge, st, cfg, ns, log):
             bridge.request({"cmd": "select_slot", "slot": cfg["whip_slot"]})
 
     fails = ns.get("fails", 0)
+    where = _house_zone(p, house)
+    if phase is None and where in ("shaft", "room") and not p.get("dead"):
+        # Not on a trip but under the arena floor -- e.g. the Moon Lord's tongue
+        # dragged the player through the floor over the shaft (live 2026-10-11,
+        # all 5 idle fights): climb straight back out.
+        log({"phase": "nurse_shaft_rescue", "zone": where})
+        ns.update(phase="exit", t=0)
+        phase = "exit"
     if phase is None:
         if ns.get("cooldown", 0) > 0:
             ns["cooldown"] -= 1
@@ -358,8 +384,7 @@ def nurse_step(bridge, st, cfg, ns, log):
     if phase == "mirror":
         # Arrived = within 20 tiles of the house (not "moved far": the world spawn
         # can be right next to the arena).
-        hx, hy = house["x"] * 16, house["y"] * 16
-        home = math.hypot(p.get("cx", 0) - hx, p.get("cy", 0) - hy) < 20 * 16
+        home = where == "room"   # inside the bed room itself, not just near the house
         if home:
             ns.update(phase="walk", t=0)
             phase = "walk"
@@ -414,7 +439,8 @@ def nurse_step(bridge, st, cfg, ns, log):
         bridge.request({"cmd": "set_action", **RELEASE, "jump": True, "up": True})
         return healed
     if phase == "exit":
-        if ns["t"] > n.get("exit_ticks", 25):
+        # Climb until back above the arena floor (or the time cap runs out).
+        if (ns["t"] > n.get("exit_ticks", 25) and where not in ("shaft", "room")) or ns["t"] > 4 * n.get("exit_ticks", 25):
             back_to_whip(0)
             return None
         ns["last_action"] = {**RELEASE, "jump": True, "up": True}
@@ -458,7 +484,9 @@ def run_episode(bridge, policy, cfg, episode_seed, log_file=None):
             {"name": cfg["heal_potion"], "stack": cfg.get("restock_potions") or 10},
             {"name": "PlatinumCoin", "stack": nurse.get("platinum", 999)}]}), "restock coins")
         house = nurse.get("house") or {}
-        r = bridge.request({"cmd": "nurse_ready", **({"x": house["x"], "y": house["y"]} if house else {})})
+        r = bridge.request({"cmd": "nurse_ready", **({"x": house["x"], "y": house["y"],
+                                                     "shaft_top_y": house.get("shaft_top_y", house["y"] - 40)}
+                                                    if house else {})})
         if not r.get("ok"):
             print(f"  nurse_ready: {r.get('error')} -- protocol inactive this fight "
                   "(rebuild the house: --build-nurse-house)", flush=True)
@@ -798,7 +826,7 @@ def main(argv=None):
                     saved = json.loads(nf.read_text())
                     break
         if saved:
-            nurse["house"] = saved.get("house")
+            nurse["house"] = {**saved.get("house"), "shaft_top_y": saved.get("shaft_top_y", saved["house"]["y"] - 40)}
         cfg["nurse"] = {**nurse, "enabled": True}
     if args.max_seconds:
         cfg["max_seconds"] = {args.mode: args.max_seconds}

@@ -295,6 +295,25 @@ b.hp = 100
 check("Nurse won't heal without walking over and opening her chat",
       not b.request({"cmd": "nurse_heal"}).get("ok") and b.hp == 100)
 
+# 15c2. Dragged under the arena floor into the shaft (live: the tongue): climb back out.
+b = FakeMoonLordBridge({"seed": 4})
+b.request({"cmd": "build_nurse_house", "depth_tiles": 40})
+class _Dragged(policies.IdlePolicy):
+    n = 0
+
+    def act(self, state):   # first tick: the tongue drops the player into the shaft
+        self.n += 1
+        if self.n == 1:
+            b.px, b.py, b.vy = b.house[0] - 6 * 16, b.house[1] - 20 * 16, 0.0
+        return super().act(state)
+
+
+row = harness.run_episode(b, _Dragged(),
+                          cfg(heal_at_hp=0, whip_slot=2, max_seconds={"fight": 8.0},
+                              nurse={"enabled": True, "hp_below": 200, "mirror_slot": 8, "exit_ticks": 25}), 4)
+check("player under the arena floor climbs back out", b.py + b.cfg["player_h"] <= b.floor + 1 and row["ledger"].get("nurse", 0) > 0,
+      f"feet {b.py + b.cfg['player_h']:.0f} floor {b.floor} ledger {row['ledger']}")
+
 # 15d. Spawn not at the bed: the protocol never starts (no mirror spam).
 b = FakeMoonLordBridge({"seed": 4, "nurse_report_spawn": False})
 b.request({"cmd": "build_nurse_house", "depth_tiles": 40})

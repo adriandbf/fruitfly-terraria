@@ -241,6 +241,7 @@ class FakeMoonLordBridge:
         return {"x": int(self.house[0] // 16), "y": int(self.house[1] // 16), "nurse_alive": True,
                 "nurse_hp": getattr(self, "nurse_hp", 250),
                 "nurse_cx": self._nurse_pos()[0], "nurse_cy": self._nurse_pos()[1],
+                "shaft_top_y": int(self.floor // 16),
                 # live 2026-10-11: an invalid house left the spawn at the world spawn
                 "spawn_at_bed": self.cfg.get("nurse_report_spawn", True)}
 

@@ -269,7 +269,10 @@ namespace FruitFlyBridge
         {
             CloseChat(Main.LocalPlayer);
             if (req["x"] != null && req["y"] != null)
+            {
                 House = new Point((int)req["x"], (int)req["y"]);
+                HouseSurface = (int?)req["shaft_top_y"] ?? House.Value.Y - 40;
+            }
             var spawn = SetSpawnToBed();
             var nurse = EnsureNurse();
             nurse["spawn_set"] = spawn.HasValue;
@@ -383,6 +386,7 @@ namespace FruitFlyBridge
             {
                 ["x"] = House.Value.X,
                 ["y"] = House.Value.Y,
+                ["shaft_top_y"] = HouseSurface,
                 ["nurse_alive"] = n != null,
                 ["nurse_hp"] = n?.life ?? 0,
                 ["nurse_cx"] = n?.Center.X ?? 0f,
