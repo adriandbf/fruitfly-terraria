@@ -114,6 +114,72 @@
     "walk_timeout_ticks": 40,
     "click_ticks": 5,
     "max_failed_trips": 2,
-    "platinum": 999
+    "platinum": 999,
+    "scan_box": [
+      -40,
+      -2,
+      40,
+      60
+    ],
+    "_scan_comment": "scan_box = [dx0, dy0, dx1, dy1] tiles from the arena mark's column / arena floor row (down = +) recorded by --scan-nurse-house; use_blueprint false = ignore nurse_blueprint.json"
+  },
+  "builder_kit": {
+    "_comment": "harness --builder-kit (user, 2026-10-11): tools and blocks for designing the Nurse house by hand. NOT part of the fight loadout -- the next fight's reset puts the inventory back to the loadout. Hotbar slots 3-4 are free in fights.",
+    "hotbar": {
+      "3": [
+        "Picksaw",
+        1294
+      ],
+      "4": [
+        "MoltenHamaxe",
+        204
+      ]
+    },
+    "inventory": [
+      {
+        "name": "GrayBrick",
+        "stack": 999
+      },
+      {
+        "name": "GrayBrickWall",
+        "stack": 999
+      },
+      {
+        "name": "WoodPlatform",
+        "stack": 999
+      },
+      {
+        "name": "Wood",
+        "stack": 999
+      },
+      {
+        "name": "DirtBlock",
+        "stack": 999
+      },
+      {
+        "name": "Torch",
+        "stack": 99
+      },
+      {
+        "name": "Bed",
+        "stack": 5
+      },
+      {
+        "name": "WoodenChair",
+        "stack": 5
+      },
+      {
+        "name": "WoodenTable",
+        "stack": 5
+      },
+      {
+        "name": "WoodenDoor",
+        "stack": 5
+      },
+      {
+        "name": "Rope",
+        "stack": 999
+      }
+    ]
   }
 }

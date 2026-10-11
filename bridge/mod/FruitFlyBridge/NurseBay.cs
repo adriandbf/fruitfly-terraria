@@ -41,8 +41,43 @@ namespace FruitFlyBridge
     {
         public static Point? House;          // (X, F) in tiles
         public static int HouseSurface;      // the arena floor row its shaft reaches
+        // Hand-designed house (scan_nurse_house -> build_nurse_house {blueprint}):
+        public static Point? SpawnPoint;     // the bed's spawn tile (game rule), absolute
+        public static Point? NurseSpot;      // where the Nurse is put (x, floor row)
+        public static Rectangle? Room;       // the bed's room (flood fill), tiles
+        public static Rectangle? Box;        // the stamped blueprint box, tiles
 
-        private static bool InWorld(int x, int y) => x > 10 && y > 10 && x < Main.maxTilesX - 10 && y < Main.maxTilesY - 10;
+        internal static JObject RectJson(Rectangle r) =>
+            new JObject { ["x0"] = r.Left, ["y0"] = r.Top, ["x1"] = r.Right - 1, ["y1"] = r.Bottom - 1 };
+
+        internal static Rectangle? RectFrom(JToken t) =>
+            t is JObject o ? new Rectangle((int)o["x0"], (int)o["y0"], (int)o["x1"] - (int)o["x0"] + 1, (int)o["y1"] - (int)o["y0"] + 1)
+                           : (Rectangle?)null;
+
+        internal static Point? PointFrom(JToken t) => t is JObject o ? new Point((int)o["x"], (int)o["y"]) : (Point?)null;
+
+        /// <summary>Everything nurse_ready needs to pick a house back up after a
+        /// mod rebuild or game restart (the harness saves it).</summary>
+        internal static JObject RestoreJson() => House.HasValue ? new JObject
+        {
+            ["x"] = House.Value.X, ["y"] = House.Value.Y, ["shaft_top_y"] = HouseSurface,
+            ["spawn_point"] = SpawnPoint.HasValue ? new JObject { ["x"] = SpawnPoint.Value.X, ["y"] = SpawnPoint.Value.Y } : null,
+            ["nurse_spot"] = NurseSpot.HasValue ? new JObject { ["x"] = NurseSpot.Value.X, ["y"] = NurseSpot.Value.Y } : null,
+            ["room"] = Room.HasValue ? RectJson(Room.Value) : null,
+            ["box"] = Box.HasValue ? RectJson(Box.Value) : null,
+        } : null;
+
+        internal static void Restore(JObject r)
+        {
+            House = new Point((int)r["x"], (int)r["y"]);
+            HouseSurface = (int?)r["shaft_top_y"] ?? House.Value.Y - 40;
+            SpawnPoint = PointFrom(r["spawn_point"]);
+            NurseSpot = PointFrom(r["nurse_spot"]);
+            Room = RectFrom(r["room"]);
+            Box = RectFrom(r["box"]);
+        }
+
+        internal static bool InWorld(int x, int y) => x > 10 && y > 10 && x < Main.maxTilesX - 10 && y < Main.maxTilesY - 10;
 
         private static void Solid(int x, int y)
         {
@@ -76,27 +111,17 @@ namespace FruitFlyBridge
                 origin = new Vector2((float)req["x"], (float)req["y"]);
             int depth = (int?)req["depth_tiles"] ?? 40;
             int offset = (int?)req["offset_x_tiles"] ?? 0;
+            // Knock down the previous houses first (user, 2026-10-11: rebuilds left the
+            // old one standing next to the new one): the one built this session,
+            // and every one the harness saved for this world (`previous`).
+            int demolished = DemolishPrevious(req, depth);
+            if (req["blueprint"] is JObject bp)
+                return NurseBlueprint.Build(req, bp, origin, demolished);
             int X = (int)((origin.X + p.width / 2f) / 16f) + offset;
             int surface = (int)((origin.Y + p.height) / 16f);   // arena floor row (ground under the mark)
             int F = surface + depth;
             if (!InWorld(X - 9, F - 8) || !InWorld(X + 8, F + 2))
                 return new JObject { ["ok"] = false, ["error"] = "house would be outside the world" };
-
-            // Knock down the previous house first (user, 2026-10-11: rebuilds left the
-            // old one standing next to the new one): the one built this session,
-            // and the one the harness saved for this world (`previous`).
-            int demolished = 0;
-            if (House.HasValue)
-                demolished += Demolish(House.Value.X, House.Value.Y, HouseSurface);
-            var prevs = req["previous"] is JArray arr ? arr : (req["previous"] is JObject one ? new JArray(one) : new JArray());
-            foreach (var tok in prevs)
-            {
-                if (!(tok is JObject prev) || prev["x"] == null || prev["y"] == null)
-                    continue;
-                int px = (int)prev["x"], py = (int)prev["y"];
-                if (!House.HasValue || House.Value.X != px || House.Value.Y != py)
-                    demolished += Demolish(px, py, (int?)prev["shaft_top_y"] ?? py - depth);
-            }
 
             // Clear the house box and the shaft (fly side) up to the arena floor.
             Setup.ClearArea(X - 12, F - 11, X + 8, F);
@@ -142,6 +167,8 @@ namespace FruitFlyBridge
 
             House = new Point(X, F);
             HouseSurface = surface;
+            SpawnPoint = NurseSpot = null;
+            Room = Box = null;
             var spawn = SetSpawnToBed();
             var nurse = EnsureNurse();
             return new JObject
@@ -152,6 +179,7 @@ namespace FruitFlyBridge
                 ["house"] = new JObject { ["x"] = X, ["y"] = F },
                 ["shaft_top_y"] = surface,
                 ["old_house_tiles_removed"] = demolished,
+                ["restore"] = RestoreJson(),
                 ["spawn"] = spawn.HasValue ? new JObject { ["x"] = spawn.Value.X, ["y"] = spawn.Value.Y } : null,
                 ["nurse"] = nurse,
             };
@@ -161,7 +189,26 @@ namespace FruitFlyBridge
         /// F-11..F; shaft X-11..X up to the arena floor) and fill the hole with
         /// dirt; the shaft's platform cap in the arena floor gets the arena's own
         /// floor tile back (copied from the floor next to it).</summary>
-        private static int Demolish(int X, int F, int surface)
+        private static int DemolishPrevious(JObject req, int depth)
+        {
+            int demolished = 0;
+            // A hand-designed house is replaced by stamping its box again; only the
+            // generated layouts are knocked down here.
+            if (House.HasValue && !SpawnPoint.HasValue)
+                demolished += Demolish(House.Value.X, House.Value.Y, HouseSurface);
+            var prevs = req["previous"] is JArray arr ? arr : (req["previous"] is JObject one ? new JArray(one) : new JArray());
+            foreach (var tok in prevs)
+            {
+                if (!(tok is JObject prev) || prev["x"] == null || prev["y"] == null || (bool?)prev["blueprint"] == true)
+                    continue;
+                int px = (int)prev["x"], py = (int)prev["y"];
+                if (!House.HasValue || House.Value.X != px || House.Value.Y != py || SpawnPoint.HasValue)
+                    demolished += Demolish(px, py, (int?)prev["shaft_top_y"] ?? py - depth);
+            }
+            return demolished;
+        }
+
+        internal static int Demolish(int X, int F, int surface)
         {
             if (!InWorld(X - 13, Math.Min(surface, F - 11)) || !InWorld(X + 9, F + 1) || surface >= F - 11)
                 return 0;
@@ -196,12 +243,27 @@ namespace FruitFlyBridge
         /// (left column + 2, row below the bed), so the Magic Mirror lands there.</summary>
         public static string SpawnError;
 
-        private static Point? SetSpawnToBed()
+        internal static Point? SetSpawnToBed()
         {
             SpawnError = null;
             if (!House.HasValue)
             {
                 SpawnError = "no house";
+                return null;
+            }
+            if (SpawnPoint.HasValue)
+            {
+                var sp = SpawnPoint.Value;
+                if (Player.CheckSpawn(sp.X, sp.Y))
+                {
+                    Main.LocalPlayer.ChangeSpawn(sp.X, sp.Y);
+                    return sp;
+                }
+                SpawnError = !(Main.tile[sp.X, sp.Y - 1].HasTile && Main.tile[sp.X, sp.Y - 1].TileType == TileID.Beds)
+                    ? "bed not found at the blueprint's bed"
+                    : (WorldGen.StartRoomCheck(sp.X, sp.Y - 1)
+                        ? "bed spawn blocked (something solid above the bed)"
+                        : "bed is not in a valid house (game's room check failed)");
                 return null;
             }
             var h = House.Value;
@@ -244,21 +306,22 @@ namespace FruitFlyBridge
             if (!House.HasValue)
                 return new JObject { ["ok"] = false, ["error"] = "no nurse house (build_nurse_house or pass x/y)" };
             var h = House.Value;
+            var spot = NurseSpot ?? new Point(h.X - 3, h.Y);
             var n = FindNurse();
             bool spawned = false;
             if (n == null)
             {
-                int idx = NPC.NewNPC(new EntitySource_Misc("FruitFlyBridge.NurseBay"), (h.X - 3) * 16 + 8, (h.Y - 1) * 16, NPCID.Nurse);
+                int idx = NPC.NewNPC(new EntitySource_Misc("FruitFlyBridge.NurseBay"), spot.X * 16 + 8, (spot.Y - 1) * 16, NPCID.Nurse);
                 if (idx < 0 || idx >= Main.maxNPCs)
                     return new JObject { ["ok"] = false, ["error"] = "could not spawn the Nurse" };
                 n = Main.npc[idx];
                 spawned = true;
             }
-            n.position = new Vector2((h.X - 3) * 16 + 8 - n.width / 2f, h.Y * 16 - n.height);
+            n.position = new Vector2(spot.X * 16 + 8 - n.width / 2f, spot.Y * 16 - n.height);
             n.velocity = Vector2.Zero;
             n.life = n.lifeMax;
-            n.homeTileX = h.X - 3;
-            n.homeTileY = h.Y - 1;
+            n.homeTileX = spot.X;
+            n.homeTileY = spot.Y - 1;
             n.homeless = false;
             return new JObject { ["ok"] = true, ["spawned"] = spawned, ["hp"] = n.life, ["max_hp"] = n.lifeMax };
         }
@@ -268,10 +331,14 @@ namespace FruitFlyBridge
         public static JObject Ready(JObject req)
         {
             CloseChat(Main.LocalPlayer);
-            if (req["x"] != null && req["y"] != null)
+            if (req["restore"] is JObject rs)
+                Restore(rs);
+            else if (req["x"] != null && req["y"] != null)
             {
                 House = new Point((int)req["x"], (int)req["y"]);
                 HouseSurface = (int?)req["shaft_top_y"] ?? House.Value.Y - 40;
+                SpawnPoint = NurseSpot = null;
+                Room = Box = null;
             }
             var spawn = SetSpawnToBed();
             var nurse = EnsureNurse();
@@ -394,8 +461,13 @@ namespace FruitFlyBridge
                 ["talking"] = n != null && Main.LocalPlayer.talkNPC == n.whoAmI,
                 ["spawn_x"] = Main.LocalPlayer.SpawnX,
                 ["spawn_y"] = Main.LocalPlayer.SpawnY,
-                ["spawn_at_bed"] = Main.LocalPlayer.SpawnX >= House.Value.X - 11 && Main.LocalPlayer.SpawnX <= House.Value.X
-                                   && Math.Abs(Main.LocalPlayer.SpawnY - House.Value.Y) <= 2,
+                ["spawn_at_bed"] = SpawnPoint.HasValue
+                    ? Main.LocalPlayer.SpawnX == SpawnPoint.Value.X && Main.LocalPlayer.SpawnY == SpawnPoint.Value.Y
+                    : Main.LocalPlayer.SpawnX >= House.Value.X - 11 && Main.LocalPlayer.SpawnX <= House.Value.X
+                      && Math.Abs(Main.LocalPlayer.SpawnY - House.Value.Y) <= 2,
+                ["blueprint"] = SpawnPoint.HasValue,
+                ["room"] = Room.HasValue ? RectJson(Room.Value) : null,
+                ["box"] = Box.HasValue ? RectJson(Box.Value) : null,
             };
         }
     }

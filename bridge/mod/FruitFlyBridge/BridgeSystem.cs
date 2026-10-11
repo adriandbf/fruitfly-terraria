@@ -246,6 +246,9 @@ namespace FruitFlyBridge
                 case "nurse_ready":
                     return HarnessSystem.RunOnGameThread(() => NurseBay.Ready(request));
 
+                case "scan_nurse_house":
+                    return HarnessSystem.RunOnGameThread(() => NurseBlueprint.Scan(request));
+
                 case "nurse_talk":
                     return HarnessSystem.RunOnGameThread(() => NurseBay.Talk(request));
 

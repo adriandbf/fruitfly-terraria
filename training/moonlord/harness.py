@@ -325,6 +325,15 @@ def _house_zone(p, house):
     roof), else None."""
     if not house or "cx" not in p:
         return None
+    if house.get("room"):
+        # Hand-designed house: the bed's room (flood fill) and the scanned box.
+        px, py = p["cx"] / 16, p["cy"] / 16
+        rm, bx = house["room"], house.get("box") or house["room"]
+        if rm["x0"] - 0.5 <= px <= rm["x1"] + 1.5 and rm["y0"] - 0.5 <= py <= rm["y1"] + 1.5:
+            return "room"
+        if (bx["x0"] <= px <= bx["x1"] + 1 and house.get("shaft_top_y", -1e9) + 0.5 < py <= bx["y1"] + 1):
+            return "shaft"
+        return None
     tx, ty = p["cx"] / 16 - house["x"], p["cy"] / 16 - house["y"]
     if not -11.5 < tx < 0.5:
         return None
@@ -484,9 +493,12 @@ def run_episode(bridge, policy, cfg, episode_seed, log_file=None):
             {"name": cfg["heal_potion"], "stack": cfg.get("restock_potions") or 10},
             {"name": "PlatinumCoin", "stack": nurse.get("platinum", 999)}]}), "restock coins")
         house = nurse.get("house") or {}
-        r = bridge.request({"cmd": "nurse_ready", **({"x": house["x"], "y": house["y"],
-                                                     "shaft_top_y": house.get("shaft_top_y", house["y"] - 40)}
-                                                    if house else {})})
+        req = {"cmd": "nurse_ready"}
+        if nurse.get("restore"):
+            req["restore"] = nurse["restore"]
+        elif house:
+            req.update(x=house["x"], y=house["y"], shaft_top_y=house.get("shaft_top_y", house["y"] - 40))
+        r = bridge.request(req)
         if not r.get("ok"):
             print(f"  nurse_ready: {r.get('error')} -- protocol inactive this fight "
                   "(rebuild the house: --build-nurse-house)", flush=True)
@@ -632,6 +644,7 @@ def _mean_frac(rows):
 
 MARK_FILE = LOG_DIR / "arena_mark.json"        # legacy single-world file (still read as a fallback)
 NURSE_FILE = LOG_DIR / "nurse_house.json"       # legacy
+BLUEPRINT_FILE = HERE / "nurse_blueprint.json"  # hand-designed Nurse house (--scan-nurse-house), in the repo
 
 
 def _world_id(ep):
@@ -719,9 +732,16 @@ def main(argv=None):
     ap.add_argument("--summon-slots", default="", help="hotbar slots of summon staffs, e.g. 0,1")
     ap.add_argument("--keep-focus", action="store_true",
                     help="ask the mod to keep feeding input while the game window is unfocused (untested)")
+    ap.add_argument("--builder-kit", action="store_true",
+                    help="give the character a pickaxe, hamaxe and building blocks (for designing the Nurse house), then exit")
     ap.add_argument("--mark-arena", action="store_true", help="set the arena to where the player stands, then exit")
     ap.add_argument("--setup-character", action="store_true",
                     help="give the loaded character the loadout.json gear and max stats, then exit")
+    ap.add_argument("--scan-nurse-house", action="store_true",
+                    help="record the Nurse house you built by hand (box from loadout nurse.scan_box, tiles from the arena mark) "
+                         "into training/moonlord/nurse_blueprint.json, then exit")
+    ap.add_argument("--generated-house", action="store_true",
+                    help="with --build-nurse-house: build the generated layout even if a hand-designed blueprint exists")
     ap.add_argument("--build-nurse-house", action="store_true",
                     help="build the Nurse house under the arena (loadout nurse.depth_tiles / offset_x_tiles)")
     ap.add_argument("--nurse", action="store_true",
@@ -760,12 +780,50 @@ def main(argv=None):
 
     bridge = connect(fake=args.fake, fake_config={"seed": args.seed})
     loadout = json.loads(Path(args.loadout).read_text())
+    if args.builder_kit:
+        # Building tools on top of the fight loadout (hotbar slots 3-4 + extra inventory).
+        kit = loadout.get("builder_kit") or {}
+        hotbar = list(loadout.get("hotbar") or [None] * 10)
+        for slot, item in (kit.get("hotbar") or {}).items():
+            hotbar[int(slot)] = item
+        inv = list(loadout.get("inventory") or []) + list(kit.get("inventory") or [])
+        print(bridge.request({"cmd": "equip_loadout", "hotbar": hotbar, "inventory": inv}))
+        bridge.close()
+        return []
     if args.mark_arena:
         print(_ok(bridge.request({"cmd": "set_arena"}), "set_arena"))
         save_arena_mark(bridge)
         return []
     if args.clear_tombstones:
         print(_ok(bridge.request({"cmd": "clear_tombstones"}), "clear_tombstones"))
+        return []
+    if args.scan_nurse_house:
+        # Record the Nurse house built by hand in the game, relative to the arena mark.
+        status = restore_arena_mark(bridge)
+        print(status)
+        if "NONE" in status:
+            print("not scanning: no arena mark in this world (stand on the arena floor, run --mark-arena)")
+            bridge.close()
+            return []
+        nl = loadout.get("nurse") or {}
+        dx0, dy0, dx1, dy1 = nl.get("scan_box", [-40, -2, 40, 60])
+        r = bridge.request({"cmd": "scan_nurse_house", "dx0": dx0, "dy0": dy0, "dx1": dx1, "dy1": dy1})
+        if not r.get("ok"):
+            print(f"scan failed: {r.get('error')}")
+        else:
+            bp = {k: r[k] for k in ("box", "cells", "beds", "nurse")}
+            bp["scanned"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            BLUEPRINT_FILE.write_text(json.dumps(bp, separators=(",", ":")) + "\n")
+            print(f"scanned {len(r['cells'])} cells in box dx {dx0}..{dx1}, dy {dy0}..{dy1} (tiles from the arena mark)")
+            for b in r["beds"]:
+                print(f"  bed spawn at dx {b['dx']}, dy {b['dy']}: {'valid' if b['valid_spawn'] else 'NOT a valid spawn (house check)'}")
+            if len(r["beds"]) > 1:
+                print("  more than one bed: the first one is used as the spawn point")
+            print(f"  Nurse: {'at dx %d, dy %d' % (r['nurse']['dx'], r['nurse']['dy']) if r.get('nurse') else 'not in the box (she will be put 3 tiles right of the bed)'}")
+            if r.get("chests_not_recorded"):
+                print(f"  {r['chests_not_recorded']} chest(s) in the box are not recorded")
+            print(f"wrote {BLUEPRINT_FILE.relative_to(ROOT)} -- --build-nurse-house now builds this design")
+        bridge.close()
         return []
     if args.build_nurse_house:
         # Build under the ARENA, never where the player happens to stand: put the
@@ -787,15 +845,19 @@ def main(argv=None):
                 history = d.get("history") or [{**d["house"], **({"shaft_top_y": d["shaft_top_y"]}
                                                                  if d.get("shaft_top_y") is not None else {})}]
                 break
-        r = bridge.request({"cmd": "build_nurse_house", "depth_tiles": nl.get("depth_tiles", 40),
-                            "offset_x_tiles": nl.get("offset_x_tiles", 0), "previous": history})
-        print(json.dumps(r, indent=1))
+        req = {"cmd": "build_nurse_house", "depth_tiles": nl.get("depth_tiles", 40),
+               "offset_x_tiles": nl.get("offset_x_tiles", 0), "previous": history}
+        if BLUEPRINT_FILE.exists() and nl.get("use_blueprint", True) and not args.generated_house:
+            req["blueprint"] = json.loads(BLUEPRINT_FILE.read_text())
+            print(f"building the hand-designed house ({BLUEPRINT_FILE.name}, scanned {req['blueprint'].get('scanned')})")
+        r = bridge.request(req)
+        print(json.dumps({k: v for k, v in r.items() if k != "restore"}, indent=1))
         if r.get("ok") or r.get("house"):
-            new = {**r["house"], "shaft_top_y": r.get("shaft_top_y")}
+            new = {**r["house"], "shaft_top_y": r.get("shaft_top_y"), "blueprint": bool(r.get("blueprint"))}
             history = [h for h in history if (h["x"], h["y"]) != (new["x"], new["y"])] + [new]
             nf.parent.mkdir(parents=True, exist_ok=True)
             nf.write_text(json.dumps({"house": r["house"], "shaft_top_y": r.get("shaft_top_y"),
-                                      "history": history, **_world_id(ep)}))
+                                      "restore": r.get("restore"), "history": history, **_world_id(ep)}))
         bridge.close()
         return []
     if args.setup_character or args.build_arena:
@@ -827,6 +889,8 @@ def main(argv=None):
                     break
         if saved:
             nurse["house"] = {**saved.get("house"), "shaft_top_y": saved.get("shaft_top_y", saved["house"]["y"] - 40)}
+            if saved.get("restore"):
+                nurse["restore"] = saved["restore"]
         cfg["nurse"] = {**nurse, "enabled": True}
     if args.max_seconds:
         cfg["max_seconds"] = {args.mode: args.max_seconds}
