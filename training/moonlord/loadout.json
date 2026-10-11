@@ -110,6 +110,8 @@
     "offset_x_tiles": 0,
     "exit_ticks": 25,
     "mirror_timeout_ticks": 40,
+    "retry_cooldown_ticks": 100,
+    "max_failed_trips": 2,
     "platinum": 999
   }
 }

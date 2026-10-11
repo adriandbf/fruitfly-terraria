@@ -221,7 +221,9 @@ class FakeMoonLordBridge:
         if getattr(self, "house", None) is None:
             return None
         return {"x": int(self.house[0] // 16), "y": int(self.house[1] // 16), "nurse_alive": True,
-                "nurse_hp": getattr(self, "nurse_hp", 250)}
+                "nurse_hp": getattr(self, "nurse_hp", 250),
+                # live 2026-10-11: an invalid house left the spawn at the world spawn
+                "spawn_at_bed": self.cfg.get("nurse_report_spawn", True)}
 
     def _cmd_set_arena(self, p):
         self.arena = (p.get("x", self.px), p.get("y", self.py))
@@ -453,7 +455,8 @@ class FakeMoonLordBridge:
         if self.hotbar.get(self.selected) == "MagicMirror":
             self._mirror_hold = self._mirror_hold + 1 if self.action.get("use") else 0
             if self._mirror_hold >= 90 and getattr(self, "house", None) is not None:
-                self.px, self.py = self.house[0] - self.cfg["player_w"] / 2, self.house[1] - self.cfg["player_h"]
+                land_x = self.house[0] + getattr(self, "mirror_miss_px", 0.0)   # test hook: spawn elsewhere
+                self.px, self.py = land_x - self.cfg["player_w"] / 2, self.house[1] - self.cfg["player_h"]
                 self.vx = self.vy = 0.0
                 self._mirror_hold = 0
             return

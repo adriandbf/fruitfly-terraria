@@ -289,6 +289,24 @@ row = harness.run_episode(b, policies.IdlePolicy(),
 check("Nurse protocol: mirrors home and heals", row["nurse_trips"] >= 1 and row["ledger"].get("nurse", 0) > 0,
       f"trips {row['nurse_trips']} ledger {row['ledger']}")
 
+# 15d. Spawn not at the bed: the protocol never starts (no mirror spam).
+b = FakeMoonLordBridge({"seed": 4, "nurse_report_spawn": False})
+b.request({"cmd": "build_nurse_house", "depth_tiles": 40})
+b.potion_delay = 10 ** 6
+ncfg = cfg(heal_at_hp=0, whip_slot=2, max_seconds={"fight": 30.0},
+           nurse={"enabled": True, "hp_below": 450, "mirror_slot": 8, "exit_ticks": 10, "mirror_timeout_ticks": 40})
+row = harness.run_episode(b, policies.IdlePolicy(), ncfg, 4)
+check("Nurse protocol stays off when the spawn isn't the bed", row["ledger"].get("nurse", 0) == 0 and b.selected == 2,
+      f"ledger {row['ledger']} slot {b.selected}")
+# 15e. Mirror doesn't bring the player home: at most 2 failed trips, whip back in hand between them.
+b = FakeMoonLordBridge({"seed": 4})
+b.request({"cmd": "build_nurse_house", "depth_tiles": 40})
+b.mirror_miss_px = 5000.0   # mirror lands somewhere else
+b.potion_delay = 10 ** 6
+row = harness.run_episode(b, policies.IdlePolicy(), ncfg, 4)
+check("failed mirror trips: capped at 2, whip reselected", 0 < row["ledger"].get("nurse", 0) <= 2 * 41 + 2 and b.selected == 2,
+      f"ledger {row['ledger']} slot {b.selected}")
+
 # 16. Human demos: passthrough on during the episode, off after; the human's
 #     keys are logged and credited "human"; free mode spawns nothing.
 b = FakeMoonLordBridge({"seed": 9})

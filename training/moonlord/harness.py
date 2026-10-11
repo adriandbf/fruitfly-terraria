@@ -328,24 +328,45 @@ def nurse_step(bridge, st, cfg, ns, log):
     p = st.get("player") or {}
     house = (st.get("episode") or {}).get("nurse_house")
     phase = ns.get("phase")
+
+    def back_to_whip(cooldown):
+        # Failed or finished trip: whip back in hand, and no new trip for a while
+        # (live 2026-10-11: a failed mirror retriggered the next tick, over and over).
+        ns.clear()
+        ns["cooldown"] = cooldown
+        ns["fails"] = fails
+        if cfg.get("whip_slot") is not None:
+            bridge.request({"cmd": "select_slot", "slot": cfg["whip_slot"]})
+
+    fails = ns.get("fails", 0)
     if phase is None:
-        if (house and house.get("nurse_alive") and 0 < p.get("hp", 0) < n.get("hp_below", 200)
+        if ns.get("cooldown", 0) > 0:
+            ns["cooldown"] -= 1
+            return None
+        # Only go home when home is the bed (spawn set there), the Nurse is alive,
+        # and the protocol hasn't failed twice this fight.
+        spawn_ok = house and house.get("spawn_at_bed", house.get("spawn_x", -1) >= 0)
+        if (spawn_ok and house.get("nurse_alive") and fails < n.get("max_failed_trips", 2)
+                and 0 < p.get("hp", 0) < n.get("hp_below", 200)
                 and p.get("potion_delay", 0) > 0 and not p.get("dead")):
             bridge.request({"cmd": "select_slot", "slot": n.get("mirror_slot", 8)})
-            ns.update(phase="mirror", t=0, x0=p.get("cx"), y0=p.get("cy"))
+            ns.update(phase="mirror", t=0, fails=fails)
             phase = "mirror"
         else:
             return None
     ns["t"] = ns.get("t", 0) + 1
     if phase == "mirror":
-        moved = math.hypot(p.get("cx", 0) - ns["x0"], p.get("cy", 0) - ns["y0"]) > 600
-        if moved:
+        # Arrived = within 20 tiles of the house (not "moved far": the world spawn
+        # can be right next to the arena).
+        hx, hy = house["x"] * 16, house["y"] * 16
+        home = math.hypot(p.get("cx", 0) - hx, p.get("cy", 0) - hy) < 20 * 16
+        if home:
             ns.update(phase="heal", t=0)
             phase = "heal"
         elif ns["t"] > n.get("mirror_timeout_ticks", 40):
-            ns.clear()
-            if cfg.get("whip_slot") is not None:
-                bridge.request({"cmd": "select_slot", "slot": cfg["whip_slot"]})
+            fails += 1
+            log({"phase": "nurse_fail", "why": "mirror did not bring the player home", "fails": fails})
+            back_to_whip(n.get("retry_cooldown_ticks", 100))
             return None
         else:
             ns["last_action"] = {**RELEASE, "use": True}
@@ -355,6 +376,9 @@ def nurse_step(bridge, st, cfg, ns, log):
         r = bridge.request({"cmd": "nurse_heal"})
         ns.update(phase="exit", t=0, heal=r)
         healed = 1 if r.get("ok") and r.get("healed", 0) > 0 else 0
+        if not r.get("ok"):
+            fails += 1
+            ns["fails"] = fails
         log({"phase": "nurse_heal", "result": r})
         if cfg.get("whip_slot") is not None:
             bridge.request({"cmd": "select_slot", "slot": cfg["whip_slot"]})
@@ -363,7 +387,7 @@ def nurse_step(bridge, st, cfg, ns, log):
         return healed
     if phase == "exit":
         if ns["t"] > n.get("exit_ticks", 25):
-            ns.clear()
+            back_to_whip(0)
             return None
         ns["last_action"] = {**RELEASE, "jump": True, "up": True}
         bridge.request({"cmd": "set_action", **RELEASE, "jump": True, "up": True})
@@ -408,7 +432,8 @@ def run_episode(bridge, policy, cfg, episode_seed, log_file=None):
         house = nurse.get("house") or {}
         r = bridge.request({"cmd": "nurse_ready", **({"x": house["x"], "y": house["y"]} if house else {})})
         if not r.get("ok"):
-            print(f"  nurse_ready: {r.get('error')} -- protocol inactive this fight", flush=True)
+            print(f"  nurse_ready: {r.get('error')} -- protocol inactive this fight "
+                  "(rebuild the house: --build-nurse-house)", flush=True)
     setup_ticks = summon_minions(bridge, clock, cfg["summon_slots"], cfg["summon_hold_ticks"], log)
     if cfg.get("whip_slot") is not None:
         _ok(bridge.request({"cmd": "select_slot", "slot": cfg["whip_slot"]}), "select whip slot")
