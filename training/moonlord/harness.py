@@ -35,6 +35,7 @@ Usage (Mac, mod loaded, in a world with any fresh character):
 """
 import argparse
 import json
+import re
 import math
 import random
 import sys
@@ -542,14 +543,26 @@ def _mean_frac(rows):
     return f"{100 * sum(fr) / len(fr):.0f}%" if fr else "n/a"
 
 
-MARK_FILE = LOG_DIR / "arena_mark.json"
-NURSE_FILE = LOG_DIR / "nurse_house.json"
+MARK_FILE = LOG_DIR / "arena_mark.json"        # legacy single-world file (still read as a fallback)
+NURSE_FILE = LOG_DIR / "nurse_house.json"       # legacy
 
 
 def _world_id(ep):
-    """What identifies the world: its size and surface height (two worlds of
-    the same size almost never share a surface line)."""
-    return {"world_tiles": ep.get("world_tiles"), "world_surface_y": ep.get("world_surface_y")}
+    """What identifies the world: its name, size and surface height."""
+    return {"world_name": ep.get("world_name"), "world_tiles": ep.get("world_tiles"),
+            "world_surface_y": ep.get("world_surface_y")}
+
+
+def _same_world(saved, ep):
+    keys = ("world_tiles", "world_surface_y") + (("world_name",) if saved.get("world_name") else ())
+    return all(saved.get(k) == _world_id(ep).get(k) for k in keys)
+
+
+def _per_world(stem, ep):
+    """logs/moonlord/<stem>_<world name>.json: one file per world, so switching
+    worlds (Normal test world vs the Expert world) keeps both."""
+    name = re.sub(r"[^A-Za-z0-9_-]+", "_", ep.get("world_name") or "").strip("_")
+    return LOG_DIR / (f"{stem}_{name}.json" if name else f"{stem}.json")
 
 
 def save_arena_mark(bridge):
@@ -558,24 +571,30 @@ def save_arena_mark(bridge):
     batch after a rebuild ran with no mark, so no leash and no reset-to-arena)."""
     ep = bridge.request({"cmd": "get_episode"}).get("episode") or {}
     if ep.get("arena") and ep.get("world_tiles"):
-        MARK_FILE.parent.mkdir(parents=True, exist_ok=True)
-        MARK_FILE.write_text(json.dumps({"arena": ep["arena"], **_world_id(ep)}))
+        f = _per_world("arena_mark", ep)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps({"arena": ep["arena"], **_world_id(ep)}))
 
 
 def restore_arena_mark(bridge):
     """Put the saved mark back if the game has none and it's the same world.
     Returns a short status line."""
     ep = bridge.request({"cmd": "get_episode"}).get("episode") or {}
+    where = f" in world '{ep.get('world_name')}'" if ep.get("world_name") else ""
     if ep.get("arena"):
-        return "arena mark: set"
-    if not MARK_FILE.exists():
-        return "arena mark: NONE (run --build-arena or --mark-arena on the arena floor)"
-    saved = json.loads(MARK_FILE.read_text())
-    if {k: saved.get(k) for k in ("world_tiles", "world_surface_y")} != _world_id(ep):
-        return "arena mark: NONE, and the saved one is for a different world (run --mark-arena on the arena floor)"
+        return f"arena mark: set{where}"
+    saved = None
+    for f in (_per_world("arena_mark", ep), MARK_FILE):
+        if f.exists():
+            d = json.loads(f.read_text())
+            if _same_world(d, ep):
+                saved, src = d, f
+                break
+    if saved is None:
+        return f"arena mark: NONE{where} (stand on the arena floor and run --mark-arena, or --build-arena --here)"
     a = saved["arena"]
     _ok(bridge.request({"cmd": "set_arena", "x": a["x"], "y": a["y"]}), "set_arena")
-    return f"arena mark: restored from {MARK_FILE.name} ({a['x']:.0f}, {a['y']:.0f})"
+    return f"arena mark: restored from {src.name}{where} ({a['x']:.0f}, {a['y']:.0f})"
 
 
 def config_from_loadout(loadout, mode="fight", whip_strategy=None, buffs=True, heal=True, whip_assist=True):
@@ -617,6 +636,8 @@ def main(argv=None):
                     help="build the Nurse house under the arena (loadout nurse.depth_tiles / offset_x_tiles)")
     ap.add_argument("--nurse", action="store_true",
                     help="Nurse healing protocol on (Magic Mirror home + Nurse heal when HP < nurse.hp_below and potion-sick)")
+    ap.add_argument("--here", action="store_true",
+                    help="with --build-arena: build where the player stands, ignoring any existing arena mark")
     ap.add_argument("--build-arena", action="store_true",
                     help="place loadout.json's platform rows around the player and mark the arena, then exit")
     ap.add_argument("--clear-tombstones", action="store_true",
@@ -662,8 +683,10 @@ def main(argv=None):
                             "offset_x_tiles": nl.get("offset_x_tiles", 0)})
         print(json.dumps(r, indent=1))
         if r.get("ok") or r.get("house"):
-            NURSE_FILE.parent.mkdir(parents=True, exist_ok=True)
-            NURSE_FILE.write_text(json.dumps({"house": r["house"]}))
+            ep = bridge.request({"cmd": "get_episode"}).get("episode") or {}
+            nf = _per_world("nurse_house", ep)
+            nf.parent.mkdir(parents=True, exist_ok=True)
+            nf.write_text(json.dumps({"house": r["house"], **_world_id(ep)}))
         bridge.close()
         return []
     if args.setup_character or args.build_arena:
@@ -672,7 +695,7 @@ def main(argv=None):
             print(bridge.request({"cmd": "equip_loadout", **req}))
         if args.build_arena:
             # Rebuild around the existing arena mark if there is one, else where you stand.
-            mark = (bridge.request({"cmd": "get_episode"}).get("episode") or {}).get("arena")
+            mark = None if args.here else (bridge.request({"cmd": "get_episode"}).get("episode") or {}).get("arena")
             where = {"x": mark["x"], "y": mark["y"]} if mark else {}
             print(bridge.request({"cmd": "build_arena", **loadout.get("arena", {}), **where}))
             save_arena_mark(bridge)
@@ -686,7 +709,13 @@ def main(argv=None):
                               whip_assist=not args.no_whip_assist)
     if args.nurse:
         nurse = dict(loadout.get("nurse") or {})
-        saved = NURSE_FILE.exists() and json.loads(NURSE_FILE.read_text())
+        saved = None
+        if not args.fake:
+            ep = bridge.request({"cmd": "get_episode"}).get("episode") or {}
+            for nf in (_per_world("nurse_house", ep), NURSE_FILE):
+                if nf.exists() and _same_world(json.loads(nf.read_text()), ep):
+                    saved = json.loads(nf.read_text())
+                    break
         if saved:
             nurse["house"] = saved.get("house")
         cfg["nurse"] = {**nurse, "enabled": True}

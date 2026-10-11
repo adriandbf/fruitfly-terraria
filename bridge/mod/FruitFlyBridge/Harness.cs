@@ -66,6 +66,8 @@ namespace FruitFlyBridge
                 ["nurse_house"] = NurseBay.ToJson(),
                 ["world_surface_y"] = Main.worldSurface * 16.0,
                 ["world_tiles"] = new JObject { ["x"] = Main.maxTilesX, ["y"] = Main.maxTilesY },
+                ["world_name"] = Main.worldName,
+                ["world_id"] = Main.worldID,
             };
         }
 
@@ -189,6 +191,16 @@ namespace FruitFlyBridge
                 };
             }
             return job.Result;
+        }
+
+        /// <summary>The arena mark and Nurse house are per world: forget them when
+        /// the world unloads (live 2026-10-11: switching to a new world without
+        /// restarting the game kept the old world's mark, so resets teleported the
+        /// player to those coordinates, underground in the new world).</summary>
+        public override void OnWorldUnload()
+        {
+            Episode.ArenaPosition = null;
+            NurseBay.House = null;
         }
 
         public override void PostUpdateInput()
