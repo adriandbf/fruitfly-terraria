@@ -40,6 +40,7 @@ namespace FruitFlyBridge
     public static class NurseBay
     {
         public static Point? House;          // (X, F) in tiles
+        public static int HouseSurface;      // the arena floor row its shaft reaches
 
         private static bool InWorld(int x, int y) => x > 10 && y > 10 && x < Main.maxTilesX - 10 && y < Main.maxTilesY - 10;
 
@@ -80,6 +81,22 @@ namespace FruitFlyBridge
             int F = surface + depth;
             if (!InWorld(X - 9, F - 8) || !InWorld(X + 8, F + 2))
                 return new JObject { ["ok"] = false, ["error"] = "house would be outside the world" };
+
+            // Knock down the previous house first (user, 2026-10-11: rebuilds left the
+            // old one standing next to the new one): the one built this session,
+            // and the one the harness saved for this world (`previous`).
+            int demolished = 0;
+            if (House.HasValue)
+                demolished += Demolish(House.Value.X, House.Value.Y, HouseSurface);
+            var prevs = req["previous"] is JArray arr ? arr : (req["previous"] is JObject one ? new JArray(one) : new JArray());
+            foreach (var tok in prevs)
+            {
+                if (!(tok is JObject prev) || prev["x"] == null || prev["y"] == null)
+                    continue;
+                int px = (int)prev["x"], py = (int)prev["y"];
+                if (!House.HasValue || House.Value.X != px || House.Value.Y != py)
+                    demolished += Demolish(px, py, (int?)prev["shaft_top_y"] ?? py - depth);
+            }
 
             // Clear the house box and the shaft (fly side) up to the arena floor.
             Setup.ClearArea(X - 12, F - 11, X + 8, F);
@@ -124,6 +141,7 @@ namespace FruitFlyBridge
             WorldGen.RangeFrame(X - 13, Math.Min(surface, F - 11) - 1, X + 9, F + 1);
 
             House = new Point(X, F);
+            HouseSurface = surface;
             var spawn = SetSpawnToBed();
             var nurse = EnsureNurse();
             return new JObject
@@ -133,9 +151,45 @@ namespace FruitFlyBridge
                 ["room_valid"] = WorldGen.StartRoomCheck(X - 5, F - 3) && WorldGen.RoomNeeds(NPCID.Nurse),
                 ["house"] = new JObject { ["x"] = X, ["y"] = F },
                 ["shaft_top_y"] = surface,
+                ["old_house_tiles_removed"] = demolished,
                 ["spawn"] = spawn.HasValue ? new JObject { ["x"] = spawn.Value.X, ["y"] = spawn.Value.Y } : null,
                 ["nurse"] = nurse,
             };
+        }
+
+        /// <summary>Remove a house (any layout so far: rooms within X-12..X+8,
+        /// F-11..F; shaft X-11..X up to the arena floor) and fill the hole with
+        /// dirt; the shaft's platform cap in the arena floor gets the arena's own
+        /// floor tile back (copied from the floor next to it).</summary>
+        private static int Demolish(int X, int F, int surface)
+        {
+            if (!InWorld(X - 13, Math.Min(surface, F - 11)) || !InWorld(X + 9, F + 1) || surface >= F - 11)
+                return 0;
+            int n = Setup.ClearArea(X - 12, F - 11, X + 8, F) + Setup.ClearArea(X - 11, surface + 1, X, F - 12);
+            for (int x = X - 12; x <= X + 8; x++)
+                for (int y = F - 11; y <= F; y++)
+                    WorldGen.PlaceTile(x, y, TileID.Dirt, true, true);
+            for (int x = X - 11; x <= X; x++)
+                for (int y = surface + 1; y <= F - 12; y++)
+                    WorldGen.PlaceTile(x, y, TileID.Dirt, true, true);
+            // The cap: copy the arena floor tile beside the shaft (e.g. a planter box).
+            var floor = Main.tile[X + 3, surface];
+            if (floor.HasTile && floor.TileType != TileID.Platforms)
+            {
+                int type = floor.TileType;
+                int style = type == TileID.PlanterBox ? floor.TileFrameY / 18 : 0;
+                for (int x = X - 10; x <= X - 1; x++)
+                {
+                    var t = Main.tile[x, surface];
+                    if (t.HasTile && t.TileType == TileID.Platforms)
+                    {
+                        WorldGen.KillTile(x, surface, false, false, true);
+                        WorldGen.PlaceTile(x, surface, type, true, true, -1, style);
+                    }
+                }
+            }
+            WorldGen.RangeFrame(X - 14, surface - 1, X + 10, F + 2);
+            return n;
         }
 
         /// <summary>Spawn point = the bed, using the game's own bed rule

@@ -740,15 +740,34 @@ def main(argv=None):
         print(_ok(bridge.request({"cmd": "clear_tombstones"}), "clear_tombstones"))
         return []
     if args.build_nurse_house:
+        # Build under the ARENA, never where the player happens to stand: put the
+        # saved arena mark back first (it's forgotten when the game reloads a world).
+        status = restore_arena_mark(bridge)
+        print(status)
+        if "NONE" in status:
+            print("not building: no arena mark in this world (stand on the arena floor, run --mark-arena)")
+            bridge.close()
+            return []
         nl = loadout.get("nurse") or {}
+        ep = bridge.request({"cmd": "get_episode"}).get("episode") or {}
+        nf = _per_world("nurse_house", ep)
+        # Every house built in this world so far, so all of them get knocked down.
+        history = []
+        for f in (nf, NURSE_FILE):
+            if f.exists() and _same_world(json.loads(f.read_text()), ep):
+                d = json.loads(f.read_text())
+                history = d.get("history") or [{**d["house"], **({"shaft_top_y": d["shaft_top_y"]}
+                                                                 if d.get("shaft_top_y") is not None else {})}]
+                break
         r = bridge.request({"cmd": "build_nurse_house", "depth_tiles": nl.get("depth_tiles", 40),
-                            "offset_x_tiles": nl.get("offset_x_tiles", 0)})
+                            "offset_x_tiles": nl.get("offset_x_tiles", 0), "previous": history})
         print(json.dumps(r, indent=1))
         if r.get("ok") or r.get("house"):
-            ep = bridge.request({"cmd": "get_episode"}).get("episode") or {}
-            nf = _per_world("nurse_house", ep)
+            new = {**r["house"], "shaft_top_y": r.get("shaft_top_y")}
+            history = [h for h in history if (h["x"], h["y"]) != (new["x"], new["y"])] + [new]
             nf.parent.mkdir(parents=True, exist_ok=True)
-            nf.write_text(json.dumps({"house": r["house"], **_world_id(ep)}))
+            nf.write_text(json.dumps({"house": r["house"], "shaft_top_y": r.get("shaft_top_y"),
+                                      "history": history, **_world_id(ep)}))
         bridge.close()
         return []
     if args.setup_character or args.build_arena:
