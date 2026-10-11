@@ -361,8 +361,10 @@ def nurse_step(bridge, st, cfg, ns, log):
         hx, hy = house["x"] * 16, house["y"] * 16
         home = math.hypot(p.get("cx", 0) - hx, p.get("cy", 0) - hy) < 20 * 16
         if home:
-            ns.update(phase="heal", t=0)
-            phase = "heal"
+            ns.update(phase="walk", t=0)
+            phase = "walk"
+            if cfg.get("whip_slot") is not None:
+                bridge.request({"cmd": "select_slot", "slot": cfg["whip_slot"]})
         elif ns["t"] > n.get("mirror_timeout_ticks", 40):
             fails += 1
             log({"phase": "nurse_fail", "why": "mirror did not bring the player home", "fails": fails})
@@ -372,6 +374,32 @@ def nurse_step(bridge, st, cfg, ns, log):
             ns["last_action"] = {**RELEASE, "use": True}
             bridge.request({"cmd": "set_action", **RELEASE, "use": True})
             return 0
+    if phase == "walk":
+        # Walk over to the Nurse and open her chat -- the mod only allows it in
+        # the game's talking range (user, 2026-10-11: no healing from the bed).
+        r = bridge.request({"cmd": "nurse_talk"})
+        if r.get("ok"):
+            ns.update(phase="talk", t=0)
+            ns["last_action"] = dict(RELEASE)
+            bridge.request({"cmd": "set_action", **RELEASE})
+            return 0
+        if ns["t"] > n.get("walk_timeout_ticks", 40):
+            fails += 1
+            log({"phase": "nurse_fail", "why": f"couldn't reach the Nurse: {r.get('error')}", "fails": fails})
+            back_to_whip(n.get("retry_cooldown_ticks", 100))
+            return None
+        dx = r.get("dx", house.get("nurse_cx", 0) - p.get("cx", 0))
+        ns["last_action"] = {**RELEASE, "right": dx > 0, "left": dx <= 0}
+        bridge.request({"cmd": "set_action", **ns["last_action"]})
+        return 0
+    if phase == "talk":
+        # The chat is open: a person needs a moment to click "Heal".
+        if ns["t"] < n.get("click_ticks", 5):
+            ns["last_action"] = dict(RELEASE)
+            bridge.request({"cmd": "set_action", **RELEASE})
+            return 0
+        ns.update(phase="heal", t=0)
+        phase = "heal"
     if phase == "heal":
         r = bridge.request({"cmd": "nurse_heal"})
         ns.update(phase="exit", t=0, heal=r)

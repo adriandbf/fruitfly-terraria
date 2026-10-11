@@ -111,6 +111,8 @@
     "exit_ticks": 25,
     "mirror_timeout_ticks": 40,
     "retry_cooldown_ticks": 100,
+    "walk_timeout_ticks": 40,
+    "click_ticks": 5,
     "max_failed_trips": 2,
     "platinum": 999
   }

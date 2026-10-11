@@ -289,6 +289,12 @@ row = harness.run_episode(b, policies.IdlePolicy(),
 check("Nurse protocol: mirrors home and heals", row["nurse_trips"] >= 1 and row["ledger"].get("nurse", 0) > 0,
       f"trips {row['nurse_trips']} ledger {row['ledger']}")
 
+b = FakeMoonLordBridge({"seed": 4})
+b.request({"cmd": "build_nurse_house", "depth_tiles": 40})
+b.hp = 100
+check("Nurse won't heal without walking over and opening her chat",
+      not b.request({"cmd": "nurse_heal"}).get("ok") and b.hp == 100)
+
 # 15d. Spawn not at the bed: the protocol never starts (no mirror spam).
 b = FakeMoonLordBridge({"seed": 4, "nurse_report_spawn": False})
 b.request({"cmd": "build_nurse_house", "depth_tiles": 40})

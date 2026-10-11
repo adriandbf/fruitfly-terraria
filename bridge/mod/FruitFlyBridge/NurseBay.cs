@@ -25,21 +25,20 @@ namespace FruitFlyBridge
     /// F = house floor row, X = divider column:
     ///
     ///   shaft X-10..X-1 (cleared up to the arena floor, platform cap there)
-    ///   #==========#######        = platforms   # = gray brick
-    ///   #  fly room  # nurse #     interiors 10x6 and 6x6, both valid houses
-    ///   # bed ch tbl #  (N)  #     (walls, torch, chair, table, bed)
-    ///   ######################  row F
-    ///   X-11        X       X+7
+    ///   #==========#####        = platforms   # = gray brick
+    ///   #  fly room  #nurse#     fly room 10x6, a valid house (walls, torch,
+    ///   # bed ch tbl # (N) #     chair, table, bed); Nurse room 4x6, narrow so
+    ///   ####################     she is always within talking range of the
+    ///   X-11        X     X+5    fly standing at the divider (X-1)
     ///
     /// The heal itself (nurse_heal) does what the Nurse's "Heal" chat button
     /// does -- same price rule, charged with BuyItem, same debuff removal --
     /// because the fly can't click through a chat window. It requires the
-    /// Nurse alive and within NurseRangeTiles.
+    /// Nurse alive and her chat open (nurse_talk, only in talking range).
     /// </summary>
     public static class NurseBay
     {
         public static Point? House;          // (X, F) in tiles
-        public const int NurseRangeTiles = 15;
 
         private static bool InWorld(int x, int y) => x > 10 && y > 10 && x < Main.maxTilesX - 10 && y < Main.maxTilesY - 10;
 
@@ -86,17 +85,17 @@ namespace FruitFlyBridge
             Setup.ClearArea(X - 10, surface, X - 1, F - 8);
 
             // Shell.
-            for (int x = X - 11; x <= X + 7; x++)
+            for (int x = X - 11; x <= X + 5; x++)
                 Solid(x, F);
             for (int y = F - 7; y <= F - 1; y++)
             {
                 Solid(X - 11, y);
                 Solid(X, y);        // divider: the Nurse stays on her side
-                Solid(X + 7, y);
+                Solid(X + 5, y);
             }
             for (int x = X - 10; x <= X - 1; x++)
                 Platform(x, F - 7); // fly room roof: fly straight up through it
-            for (int x = X + 1; x <= X + 6; x++)
+            for (int x = X + 1; x <= X + 4; x++)
                 Solid(x, F - 7);    // Nurse roof: solid
             // Cap the shaft where it meets the arena floor with platforms (passable
             // both ways), so the arena floor stays walkable.
@@ -110,17 +109,15 @@ namespace FruitFlyBridge
             }
 
             // Background walls, light, furniture (a valid house in both rooms).
-            for (int x = X - 10; x <= X + 6; x++)
+            for (int x = X - 10; x <= X + 4; x++)
                 for (int y = F - 6; y <= F - 1; y++)
                     if (x != X)
                         WorldGen.PlaceWall(x, y, WallID.GrayBrick, true);
             WorldGen.PlaceTile(X - 1, F - 5, TileID.Torches, true);
-            WorldGen.PlaceTile(X + 6, F - 5, TileID.Torches, true);
+            WorldGen.PlaceTile(X + 4, F - 5, TileID.Torches, true);
             bool bed = WorldGen.PlaceObject(X - 8, F - 1, TileID.Beds, true, 0);       // X-9..X-6
             WorldGen.PlaceObject(X - 5, F - 1, TileID.Chairs, true, 0);
             WorldGen.PlaceObject(X - 3, F - 1, TileID.Tables, true, 0);                // X-4..X-2
-            WorldGen.PlaceObject(X + 2, F - 1, TileID.Chairs, true, 0);
-            WorldGen.PlaceObject(X + 5, F - 1, TileID.Tables, true, 0);                // X+4..X+6
             WorldGen.RangeFrame(X - 13, surface - 1, X + 9, F + 1);
 
             House = new Point(X, F);
@@ -194,16 +191,16 @@ namespace FruitFlyBridge
             bool spawned = false;
             if (n == null)
             {
-                int idx = NPC.NewNPC(new EntitySource_Misc("FruitFlyBridge.NurseBay"), (h.X + 4) * 16 + 8, (h.Y - 1) * 16, NPCID.Nurse);
+                int idx = NPC.NewNPC(new EntitySource_Misc("FruitFlyBridge.NurseBay"), (h.X + 2) * 16 + 8, (h.Y - 1) * 16, NPCID.Nurse);
                 if (idx < 0 || idx >= Main.maxNPCs)
                     return new JObject { ["ok"] = false, ["error"] = "could not spawn the Nurse" };
                 n = Main.npc[idx];
                 spawned = true;
             }
-            n.position = new Vector2((h.X + 4) * 16 + 8 - n.width / 2f, h.Y * 16 - n.height);
+            n.position = new Vector2((h.X + 2) * 16 + 8 - n.width / 2f, h.Y * 16 - n.height);
             n.velocity = Vector2.Zero;
             n.life = n.lifeMax;
-            n.homeTileX = h.X + 4;
+            n.homeTileX = h.X + 2;
             n.homeTileY = h.Y - 1;
             n.homeless = false;
             return new JObject { ["ok"] = true, ["spawned"] = spawned, ["hp"] = n.life, ["max_hp"] = n.lifeMax };
@@ -213,6 +210,7 @@ namespace FruitFlyBridge
         /// after a mod rebuild), re-set the spawn to the bed, ensure the Nurse.</summary>
         public static JObject Ready(JObject req)
         {
+            CloseChat(Main.LocalPlayer);
             if (req["x"] != null && req["y"] != null)
                 House = new Point((int)req["x"], (int)req["y"]);
             var spawn = SetSpawnToBed();
@@ -226,6 +224,42 @@ namespace FruitFlyBridge
             return nurse;
         }
 
+        /// <summary>nurse_talk: what right-clicking the Nurse does -- open her
+        /// chat -- allowed only where the game allows it: the player's talk range
+        /// (Player.tileRangeX/Y around the player's centre must overlap her
+        /// hitbox, the same box the game uses to close a chat when you walk
+        /// away). So the fly has to walk over to her first.</summary>
+        public static JObject Talk(JObject req)
+        {
+            var p = Main.LocalPlayer;
+            var n = FindNurse();
+            if (n == null)
+                return new JObject { ["ok"] = false, ["error"] = "no Nurse" };
+            var range = new Rectangle((int)(p.Center.X - Player.tileRangeX * 16), (int)(p.Center.Y - Player.tileRangeY * 16),
+                                      Player.tileRangeX * 16 * 2, Player.tileRangeY * 16 * 2);
+            float dx = n.Center.X - p.Center.X;
+            if (!range.Intersects(n.Hitbox))
+                return new JObject { ["ok"] = false, ["error"] = "out of talking range", ["dx"] = dx,
+                                     ["dy"] = n.Center.Y - p.Center.Y };
+            if (p.talkNPC != n.whoAmI)
+            {
+                p.SetTalkNPC(n.whoAmI);
+                Main.playerInventory = false;
+                Main.npcChatText = n.GetChat();
+                SoundEngine.PlaySound(SoundID.MenuOpen);
+            }
+            return new JObject { ["ok"] = true, ["talking"] = true, ["dx"] = dx };
+        }
+
+        private static void CloseChat(Player p)
+        {
+            if (p.talkNPC >= 0)
+            {
+                p.SetTalkNPC(-1);
+                Main.npcChatText = "";
+            }
+        }
+
         /// <summary>nurse_heal: the Nurse's Heal button, for the fly. Same price
         /// rule as the game's first steps (missing HP + 100 per removable debuff,
         /// times the progression multiplier; the game then applies a few more
@@ -237,9 +271,11 @@ namespace FruitFlyBridge
             var n = FindNurse();
             if (n == null)
                 return new JObject { ["ok"] = false, ["error"] = "no Nurse" };
+            // Only through her chat window, like the Heal button: the chat must be
+            // open (nurse_talk) and the game closes it if the player walks away.
+            if (p.talkNPC != n.whoAmI)
+                return new JObject { ["ok"] = false, ["error"] = "not talking to the Nurse (walk over, nurse_talk first)" };
             float dist = Vector2.Distance(p.Center, n.Center) / 16f;
-            if (dist > NurseRangeTiles)
-                return new JObject { ["ok"] = false, ["error"] = "too far from the Nurse", ["distance_tiles"] = dist };
             int missing = p.statLifeMax2 - p.statLife;
             int price = missing;
             for (int j = 0; j < p.buffType.Length; j++)
@@ -256,9 +292,15 @@ namespace FruitFlyBridge
             else if (NPC.downedBoss2) price *= 10;
             else if (NPC.downedBoss1) price *= 3;
             if (price <= 0)
+            {
+                CloseChat(p);
                 return new JObject { ["ok"] = true, ["healed"] = 0, ["price"] = 0 };
+            }
             if (!p.BuyItem(price))
+            {
+                CloseChat(p);
                 return new JObject { ["ok"] = false, ["error"] = "can't afford", ["price"] = price };
+            }
             SoundEngine.PlaySound(SoundID.Item4, p.Center);
             p.HealEffect(missing, true);
             p.statLife = p.statLifeMax2;
@@ -271,6 +313,7 @@ namespace FruitFlyBridge
                     l = -1;
                 }
             }
+            CloseChat(p);   // and back to the fight
             return new JObject { ["ok"] = true, ["healed"] = missing, ["price"] = price, ["distance_tiles"] = dist };
         }
 
@@ -285,6 +328,9 @@ namespace FruitFlyBridge
                 ["y"] = House.Value.Y,
                 ["nurse_alive"] = n != null,
                 ["nurse_hp"] = n?.life ?? 0,
+                ["nurse_cx"] = n?.Center.X ?? 0f,
+                ["nurse_cy"] = n?.Center.Y ?? 0f,
+                ["talking"] = n != null && Main.LocalPlayer.talkNPC == n.whoAmI,
                 ["spawn_x"] = Main.LocalPlayer.SpawnX,
                 ["spawn_y"] = Main.LocalPlayer.SpawnY,
                 ["spawn_at_bed"] = Main.LocalPlayer.SpawnX >= House.Value.X - 11 && Main.LocalPlayer.SpawnX <= House.Value.X

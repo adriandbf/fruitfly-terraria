@@ -207,12 +207,30 @@ class FakeMoonLordBridge:
         self.nurse_hp = 250
         return {"ok": True, "hp": 250}
 
+    # House layout as NurseBay.cs v3: bed (spawn) 7 tiles left of the divider
+    # column, Nurse 2 tiles right of it; talking range = Player.tileRangeX/Y (5/4 tiles).
+    def _nurse_pos(self):
+        return self.house[0] + 2.5 * 16, self.house[1] - 21
+
+    def _cmd_nurse_talk(self, p):
+        if getattr(self, "house", None) is None:
+            return {"ok": False, "error": "no Nurse"}
+        pcx, pcy = self._centre()
+        nx, ny = self._nurse_pos()
+        if abs(nx - pcx) > 5 * 16 + 9 or abs(ny - pcy) > 4 * 16 + 21:
+            self.talking = False
+            return {"ok": False, "error": "out of talking range", "dx": nx - pcx, "dy": ny - pcy}
+        self.talking = True
+        return {"ok": True, "talking": True, "dx": nx - pcx}
+
     def _cmd_nurse_heal(self, p):
         if getattr(self, "house", None) is None:
             return {"ok": False, "error": "no Nurse"}
         pcx, pcy = self._centre()
-        if abs(pcx - self.house[0]) > 15 * 16 or abs(pcy - self.house[1]) > 15 * 16:
-            return {"ok": False, "error": "too far from the Nurse"}
+        nx, ny = self._nurse_pos()
+        if not getattr(self, "talking", False) or abs(nx - pcx) > 5 * 16 + 9 or abs(ny - pcy) > 4 * 16 + 21:
+            return {"ok": False, "error": "not talking to the Nurse (walk over, nurse_talk first)"}
+        self.talking = False
         missing = self.cfg["player_hp"] - self.hp
         self.hp = self.cfg["player_hp"]
         return {"ok": True, "healed": int(missing), "price": int(missing) * 200}
@@ -222,6 +240,7 @@ class FakeMoonLordBridge:
             return None
         return {"x": int(self.house[0] // 16), "y": int(self.house[1] // 16), "nurse_alive": True,
                 "nurse_hp": getattr(self, "nurse_hp", 250),
+                "nurse_cx": self._nurse_pos()[0], "nurse_cy": self._nurse_pos()[1],
                 # live 2026-10-11: an invalid house left the spawn at the world spawn
                 "spawn_at_bed": self.cfg.get("nurse_report_spawn", True)}
 
@@ -373,8 +392,16 @@ class FakeMoonLordBridge:
     def _centre(self):
         return self.px + self.cfg["player_w"] / 2, self.py + self.cfg["player_h"] / 2
 
+    def _in_house(self):
+        """Below the arena floor = in the Nurse house / its shaft (NurseBay.cs v3):
+        fly room and shaft span 10 tiles left of the divider column."""
+        return getattr(self, "house", None) is not None and self.py + self.cfg["player_h"] > self.floor + 1
+
+    def _floor_here(self):
+        return self.house[1] if self._in_house() else self.floor
+
     def _on_ground(self):
-        return self.py + self.cfg["player_h"] >= self.floor - 0.01 or getattr(self, "on_row", False)
+        return self.py + self.cfg["player_h"] >= self._floor_here() - 0.01 or getattr(self, "on_row", False)
 
     def _row_lines(self):
         c = self.cfg
@@ -440,11 +467,15 @@ class FakeMoonLordBridge:
                     else:
                         self.py, self.vy, self.on_row = row - c["player_h"], 0.0, True
                     break
-        left, right = self.spawn_x - c["arena_half_width"], self.spawn_x + c["arena_half_width"] - c["player_w"]
+        if self._in_house():
+            left, right = self.house[0] - 10 * 16, self.house[0] - c["player_w"]
+        else:
+            left, right = self.spawn_x - c["arena_half_width"], self.spawn_x + c["arena_half_width"] - c["player_w"]
         if not left <= self.px <= right:
             self.px, self.vx = max(left, min(right, self.px)), 0.0  # walls stop you dead
-        if self.py + c["player_h"] >= self.floor:
-            self.py = self.floor - c["player_h"]
+        floor = self._floor_here()
+        if self.py + c["player_h"] >= floor:
+            self.py = floor - c["player_h"]
             self.vy = min(self.vy, 0.0)
         top = self.floor - c["ceiling_px"]
         if self.py < top:
@@ -455,8 +486,9 @@ class FakeMoonLordBridge:
         if self.hotbar.get(self.selected) == "MagicMirror":
             self._mirror_hold = self._mirror_hold + 1 if self.action.get("use") else 0
             if self._mirror_hold >= 90 and getattr(self, "house", None) is not None:
-                land_x = self.house[0] + getattr(self, "mirror_miss_px", 0.0)   # test hook: spawn elsewhere
-                self.px, self.py = land_x - self.cfg["player_w"] / 2, self.house[1] - self.cfg["player_h"]
+                land_x = self.house[0] - 7 * 16 + getattr(self, "mirror_miss_px", 0.0)   # the bed; test hook: elsewhere
+                land_y = self.floor if getattr(self, "mirror_miss_px", 0.0) else self.house[1]   # a miss = world spawn up top
+                self.px, self.py = land_x - self.cfg["player_w"] / 2, land_y - self.cfg["player_h"]
                 self.vx = self.vy = 0.0
                 self._mirror_hold = 0
             return
