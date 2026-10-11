@@ -3,12 +3,12 @@
 A tModLoader mod, `FruitFlyBridge`, that runs on the Mac's client. It exposes
 a local, loopback-only JSON-over-TCP server so the Python control loop can
 read game state and hold keys, without either side needing to know the
-other's internals. This is the "small JSON-over-socket API" from CLAUDE.md,
+other's internals. This is the "small JSON-over-socket API" from README.md,
 so the bridge (this mod, or later HeadlessTerrariaClient) can be swapped
 without touching the brain/encoder/decoder code.
 
 Runs only on the Mac, under the Mac's own Steam account — see the Phase 2
-identity decision in CLAUDE.md. The PC's server and the human's client on
+identity decision in README.md. The PC's server and the human's client on
 the PC never need this mod (`side = Client` in build.txt).
 
 ## Status: working
@@ -80,7 +80,7 @@ If not currently in a world: `{"ok": true, "in_world": false}`.
 character, and never NPCs) — added for Phase 4, since the encoder needs the
 human's position for a "walk toward the human" drive and `npcs` never
 contains other players. Untested against a real build (no rebuild/live
-test done yet as of this addition — see CLAUDE.md's Phase 4 status).
+test done yet as of this addition — see README.md's Phase 4 status).
 
 NPCs are limited to those within 800px (~50 tiles) of the player. The tile
 grid is a flat row-major array centred on the player, ±15 tiles horizontally
@@ -88,7 +88,7 @@ and ±8 vertically; `-1` marks out-of-bounds or air.
 
 **`{"cmd": "set_action", "left": bool, "right": bool, "jump": bool, "use": bool}`**
 → `{"ok": true}`. Keys are *held* — the mod keeps applying the most recent
-action every game tick until a new one arrives, matching CLAUDE.md's "keys
+action every game tick until a new one arrives, matching README.md's "keys
 held between decisions" control loop. There is no separate "release" command;
 send all-false to release everything.
 

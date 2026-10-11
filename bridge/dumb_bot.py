@@ -2,7 +2,7 @@
 
 No brain involved yet — that's Phase 4+. This is a deterministic, scripted
 policy that proves out the read-state -> decide -> send-action loop at
-10 Hz, per CLAUDE.md: "Bridge with a dumb bot: read state (position,
+10 Hz, per README.md: "Bridge with a dumb bot: read state (position,
 health, nearby NPCs/tiles), send actions (left, right, jump, use item),
 scripted policy, logged at 10 Hz."
 

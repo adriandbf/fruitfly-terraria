@@ -1,4 +1,4 @@
-"""Phase 5: the three required baselines (CLAUDE.md), comparing the
+"""Phase 5: the three required baselines (README.md), comparing the
 claimed sugar/water GRN -> DNa02/DNb05 approach pathway against:
   (a) random mapping -- same population sizes, randomly sampled neurons
   (b) degree-preserving shuffled connectome -- same neurons, randomized wiring

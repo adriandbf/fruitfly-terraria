@@ -4,7 +4,7 @@ dumb_bot.py. Ties together:
     bridge.get_state() -> encoder.encode() -> FastBrain.stimulate()
         -> decoder.decode() -> bridge.set_action()
 
-at 10 Hz (100ms of simulated brain per decision, per CLAUDE.md's control
+at 10 Hz (100ms of simulated brain per decision, per README.md's control
 loop), logging every tick to logs/. UNTESTED end to end against the live
 game as of this writing -- the brain side (encoder/decoder/FastBrain) has
 its own offline checks (see brain/validate_fast_sim_v783.py and this
@@ -56,7 +56,7 @@ RELEASE = {"left": False, "right": False, "jump": False, "use": False}
 
 # The handful of named neurons worth logging per tick for interpretability
 # (not the full ~138k-neuron rate array -- see module docstring's sibling
-# note in CLAUDE.md-style logging convention: this is a deliberate, small,
+# note in README.md-style logging convention: this is a deliberate, small,
 # purposeful subset, not "log everything").
 READOUT_GROUPS = {
     "DNb05_forward": neurons.DNB05_MOVE,

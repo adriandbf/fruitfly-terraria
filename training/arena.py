@@ -10,7 +10,7 @@ code itself.
 
 Scope for this training pass, deliberately narrow: only the "approach"
 behavior is scored, since it's the only one confirmed to produce any
-decoder response at all (see CLAUDE.md's Phase 4 status -- the threat/
+decoder response at all (see README.md's Phase 4 status -- the threat/
 bitter pathway is confirmed dead live, and jump/DNp01 never fires from
 either sensory channel). The arena still includes a hostile NPC some of
 the time (so the threat channel gets exercised, in case a future neuron
@@ -26,7 +26,7 @@ placeholder.
 """
 
 WALK_SPEED_PX_PER_S = 150.0   # roughly Terraria's own walk speed
-TICK_S = 0.1                  # 10 Hz control loop, matching CLAUDE.md
+TICK_S = 0.1                  # 10 Hz control loop, matching README.md
 
 
 class Arena:

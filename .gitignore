@@ -11,3 +11,6 @@ bridge/mod/*/bin/
 bridge/mod/*/obj/
 bridge/mod/*/Localization/
 *.tmod
+
+# Claude working notes (kept locally, not in the repo)
+CLAUDE.md

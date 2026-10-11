@@ -1,5 +1,5 @@
 """Named neuron sets for the encoder/decoder, picked from real FlyWire
-annotations (CLAUDE.md Phase 4: "Pick motor neurons from FlyWire
+annotations (README.md Phase 4: "Pick motor neurons from FlyWire
 annotations, not guesses"), not from this project's own guesswork.
 
 Source: flyconnectome/flywire_annotations (Schlegel et al.),

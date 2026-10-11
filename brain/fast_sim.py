@@ -167,7 +167,7 @@ class FastBrain:
         return self._advance(duration_ms, self.exc_indices, poisson_p)
 
     def stimulate(self, neuron_ids, rates_hz, duration_ms=100):
-        """Phase 3/4's target API (CLAUDE.md): drive `neuron_ids` -- real
+        """Phase 3/4's target API (README.md): drive `neuron_ids` -- real
         FlyWire root IDs, e.g. from brain/neurons.py -- with independent
         Poisson processes at the given `rates_hz` (same mechanism as the
         model's sugar drive: each event is a direct kick to v, not g) for

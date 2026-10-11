@@ -206,7 +206,7 @@ namespace FruitFlyBridge
         public override void PostUpdateInput()
         {
             // Vanilla only feeds controls to the player while Main.hasFocus
-            // is true (the live finding in CLAUDE.md: the character froze
+            // is true (the live finding in README.md: the character froze
             // whenever another app was frontmost). hasFocus is recomputed
             // from the window every frame BEFORE input handling; this hook
             // runs right after PlayerInput.UpdateInput() and before players

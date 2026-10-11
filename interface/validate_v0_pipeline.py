@@ -9,7 +9,7 @@ below) and worth being able to reproduce rather than just remembering.
 This script only exercises the brain/encoder/decoder side with synthetic
 states; interface/run_fly.py is the live version. Approach and the LC4-
 based threat/jump pathway have both since been confirmed live too -- see
-CLAUDE.md's status for the live test results.
+README.md's status for the live test results.
 
 Usage: python interface/validate_v0_pipeline.py
 """
@@ -95,7 +95,7 @@ downstream activity in this real, individually-reconstructed connectome
 slices) -- so "approach: human to the LEFT" above likely won't show the
 mirror-image steering of the RIGHT case. This isn't a code bug (rates are
 verified correct on both sides); it's a genuine asymmetry in this
-particular brain's real wiring. CLAUDE.md's Phase 5 explicitly plans for
+particular brain's real wiring. README.md's Phase 5 explicitly plans for
 this: comparing against a random mapping, a shuffled connectome, and
 ablations is exactly how you'd tell a real, usable pathway from one that's
 this lopsided by chance/reconstruction quirks -- that calibration belongs
