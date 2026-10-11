@@ -10,14 +10,15 @@ A simulated fruit-fly brain plays Terraria. The brain is the whole-brain leaky i
 |---|---|---|---|
 | Expert, no Nurse | 0 / 10 | 38 s | ~14 |
 | Normal, no Nurse | 4 / 10 | 78 s | ~16 |
-| Expert + Nurse (fly's own house design) | **9 / 10** | 130 s | 14.1 |
+| Expert + Nurse (hand-built house) | **9 / 10** | 130 s | 14.1 |
+| **Master** + Nurse (hand-built house) | 1 / 10 | 59 s | 14.9 |
 
 Same setup, other controllers: scripted dodger 3/5 wins (15.1 hits/min); standing still 1/5 (31.9 hits/min). A control brain with a **shuffled connectome** and the same readout neurons barely moves and loses like standing still, so the dodging depends on the real wiring.
 
 ## Next major steps
 1. **Master mode**, the hardest difficulty (same arena, Nurse house and loadout; Master unlocks the 7th accessory slot the loadout already uses).
-2. **Minimise the hits the fly takes** each fight, and with them the Nurse trips. Work through the Moon Lord's attacks one at a time, most damaging first. Expert ranking (share of damage taken): body contact 25%, tongue 23%, homing eyes 16%, bolts 11%, deathray 10% (biggest single hits), spheres 8%.
-3. **Give the fly more autonomy.** Hand every scripted decision to the fly's brain, one at a time, keeping scripts only as fallbacks. Today the brain moves the character on 84% of fight ticks and (new) pilots its own climb out of the Nurse room. Still scripted: the Nurse trips (15.5% of ticks), the arena leash (edits 12.8% of the fly's ticks), the whip (swing, aim, target), healing potions. Minions stay with the game's AI, as for a human summoner.
+2. **Minimise the hits the fly takes** each fight, and with them the Nurse trips. Work through the Moon Lord's attacks one at a time, most damaging first. Master ranking (share of damage taken): homing eyes 22%, bolts 19%, deathray 14% (biggest single hits), tongue 13%, spheres 11%, body contact 18% across all parts.
+3. **Give the fly more autonomy.** Hand every scripted decision to the fly's brain, one at a time, keeping scripts only as fallbacks. Today the brain moves the character on 84% of fight ticks and pilots its own climb out of the Nurse room (25/25 trips on Master, ~0.4 s each). Still scripted: the Nurse trips (15.5% of ticks), the arena leash (edits 12.8% of the fly's ticks), the whip (swing, aim, target), healing potions. Minions stay with the game's AI, as for a human summoner.
 
 ## How the fly works
 ```
