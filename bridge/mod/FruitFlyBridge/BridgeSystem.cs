@@ -239,6 +239,16 @@ namespace FruitFlyBridge
                 case "select_slot":
                     return HarnessSystem.RunOnGameThread(() => HarnessSystem.SelectSlot(request));
 
+                // Nurse healing protocol (NurseBay.cs)
+                case "build_nurse_house":
+                    return HarnessSystem.RunOnGameThread(() => NurseBay.Build(request));
+
+                case "nurse_ready":
+                    return HarnessSystem.RunOnGameThread(() => NurseBay.Ready(request));
+
+                case "nurse_heal":
+                    return HarnessSystem.RunOnGameThread(() => NurseBay.Heal(request));
+
                 default:
                     return new JObject { ["ok"] = false, ["error"] = $"unknown cmd '{cmd}'" };
             }

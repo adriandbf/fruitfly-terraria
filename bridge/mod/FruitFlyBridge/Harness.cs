@@ -63,6 +63,7 @@ namespace FruitFlyBridge
                     ? new JObject { ["x"] = ArenaPosition.Value.X, ["y"] = ArenaPosition.Value.Y }
                     : null,
                 ["full_gravity_y"] = FullGravityY(),
+                ["nurse_house"] = NurseBay.ToJson(),
                 ["world_surface_y"] = Main.worldSurface * 16.0,
                 ["world_tiles"] = new JObject { ["x"] = Main.maxTilesX, ["y"] = Main.maxTilesY },
             };
