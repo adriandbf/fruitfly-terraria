@@ -444,9 +444,25 @@ def nurse_step(bridge, st, cfg, ns, log):
         log({"phase": "nurse_heal", "result": r})
         if cfg.get("whip_slot") is not None:
             bridge.request({"cmd": "select_slot", "slot": cfg["whip_slot"]})
+        if n.get("exit_by", "fly") == "fly":
+            # The fly pilots its own way out (user, 2026-10-11): hand control back
+            # now; the scripted climb only takes over if it is still under the
+            # arena floor after fly_exit_timeout_ticks.
+            ns.update(phase="fly_exit", t=0)
+            return healed
         ns["last_action"] = {**RELEASE, "jump": True, "up": True}
         bridge.request({"cmd": "set_action", **RELEASE, "jump": True, "up": True})
         return healed
+    if phase == "fly_exit":
+        if where not in ("shaft", "room") or p.get("dead"):
+            log({"phase": "nurse_fly_exit", "ticks": ns["t"], "ok": not p.get("dead")})
+            back_to_whip(0)
+            return None
+        if ns["t"] <= n.get("fly_exit_timeout_ticks", 50):
+            return None            # the policy (the fly) is driving
+        log({"phase": "nurse_fly_exit", "ticks": ns["t"], "ok": False, "why": "timeout: scripted climb takes over"})
+        ns.update(phase="exit", t=0)
+        phase = "exit"
     if phase == "exit":
         # Climb until back above the arena floor (or the time cap runs out).
         if (ns["t"] > n.get("exit_ticks", 25) and where not in ("shaft", "room")) or ns["t"] > 4 * n.get("exit_ticks", 25):

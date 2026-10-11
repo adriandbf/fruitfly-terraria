@@ -121,7 +121,9 @@
       40,
       60
     ],
-    "_scan_comment": "scan_box = [dx0, dy0, dx1, dy1] tiles from the arena mark's column / arena floor row (down = +) recorded by --scan-nurse-house; use_blueprint false = ignore nurse_blueprint.json"
+    "_scan_comment": "scan_box = [dx0, dy0, dx1, dy1] tiles from the arena mark's column / arena floor row (down = +) recorded by --scan-nurse-house; use_blueprint false = ignore nurse_blueprint.json",
+    "exit_by": "fly",
+    "fly_exit_timeout_ticks": 50
   },
   "builder_kit": {
     "_comment": "harness --builder-kit (user, 2026-10-11): tools and blocks for designing the Nurse house by hand. NOT part of the fight loadout -- the next fight's reset puts the inventory back to the loadout. Hotbar slots 3-4 are free in fights.",
