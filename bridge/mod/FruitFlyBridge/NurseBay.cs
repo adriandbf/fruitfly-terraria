@@ -217,7 +217,7 @@ namespace FruitFlyBridge
                 return new JObject { ["ok"] = false, ["error"] = "too far from the Nurse", ["distance_tiles"] = dist };
             int missing = p.statLifeMax2 - p.statLife;
             int price = missing;
-            for (int j = 0; j < Player.maxBuffs; j++)
+            for (int j = 0; j < p.buffType.Length; j++)
             {
                 int b = p.buffType[j];
                 if (b > 0 && Main.debuff[b] && p.buffTime[j] > 60 && !BuffID.Sets.NurseCannotRemoveDebuff[b])
@@ -237,7 +237,7 @@ namespace FruitFlyBridge
             SoundEngine.PlaySound(SoundID.Item4, p.Center);
             p.HealEffect(missing, true);
             p.statLife = p.statLifeMax2;
-            for (int l = 0; l < Player.maxBuffs; l++)
+            for (int l = 0; l < p.buffType.Length; l++)
             {
                 int b = p.buffType[l];
                 if (b > 0 && Main.debuff[b] && p.buffTime[l] > 0 && !BuffID.Sets.NurseCannotRemoveDebuff[b])
