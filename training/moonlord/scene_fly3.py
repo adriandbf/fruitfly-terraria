@@ -207,7 +207,7 @@ def fit(args):
           f"vertical {r2(wv, V):.3f}")
     tw = json.loads(Path(args.teacher).read_text())["weights"]
     n2 = 2 * (len(scene3.CHANNELS) + 3)
-    out = Path(args.out) if args.out else HERE / "params" / f"{Path(args.data).stem}.json"
+    out = (Path(args.out) if args.out else HERE / "params" / f"{Path(args.data).stem}.json").resolve()
     out.write_text(json.dumps({"readout": {"wh": wh.tolist(), "wv": wv.tolist(), "thr": abs(tw[n2]),
                                            "hold": abs(tw[n2 + 1]) * 20, "override": abs(tw[n2 + 2]) * 2,
                                            "dn_ids": [int(ALL_DNS[i]) for i in cols]},
