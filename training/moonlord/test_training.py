@@ -3,6 +3,7 @@ table brain, train_fly_cma, imitate). No game and no connectome needed: the
 brain is a small synthetic response table. Run:
 python training/moonlord/test_training.py"""
 import json
+import math
 import sys
 import tempfile
 from pathlib import Path
@@ -151,6 +152,12 @@ check("v3: a projectile rising from below-left drives LC12 left, not LC11",
       below[("LC12", -1)] > 0 and below[("LC11", -1)] == 0 and below[("LC12", 1)] == 0)
 beam = scene3.scene_rates_v3({**base, "projectiles": [{"type": 455, "cx": -600.0, "cy": -400.0, "vx": 0.83, "vy": 0.56}]})
 check("v3: a deathray passing near drives LC22", max(beam[("LC22", -1)], beam[("LC22", 1)]) > 0)
+# beam from (0,-900) pointing 0.4 rad to the right of straight down at the fly (0,0): ~360 px off the
+# line (old band silent) but within 0.6 rad -> LC22 on the beam's side (right)
+far_beam = scene3.scene_rates_v3({**base, "projectiles": [{"type": 455, "cx": 0.0, "cy": -900.0,
+                                                            "vx": math.sin(0.4), "vy": math.cos(0.4)}]})
+check("v3.1: a sweeping deathray 0.4 rad away already drives LC22 on its side",
+      far_beam[("LC22", 1)] > 0 and far_beam[("LC22", -1)] == 0, f"{far_beam[('LC22', 1)]:.0f} Hz")
 
 print()
 print("ALL PASS" if not FAILS else f"{len(FAILS)} FAILED: {FAILS}")

@@ -135,7 +135,11 @@ MASTER = {"eye_damage": 125, "bolt_damage": 101, "ray_damage": 278, "sphere_dama
           # ~0.04), overshoot and loop back. Speed 11 +-30%, turn 0.03, a volley every 160 ticks
           # gives the senses3 teacher 5.7 eye hits/min offline vs the fly's 4.9 live.
           "eye_origin": "hands", "eye_speed": 11.0, "eye_speed_spread": 0.3, "eye_turn": 0.03,
-          "eye_period": 160, "eye_life": 300}
+          "eye_period": 160, "eye_life": 300,
+          # Deathray rebuilt from 128 live beams (2026-10-12): first at 17.8 s, then every ~18-22 s,
+          # from the head; starts ~1 rad to one side of the player and sweeps 0.0116 rad/tick for
+          # ~2.9 s (~2 rad) across them.
+          "ray_first": 1068, "ray_period": 1200, "ray_duration": 175, "ray_sweep": 2.03}
 MASTER_HP = 1.275
 
 DEFAULT_DAMAGE = {PHANTASMAL_BOLT: 71, PHANTASMAL_SPHERE: 126, PHANTASMAL_EYE: 66, PHANTASMAL_DEATHRAY: 78}

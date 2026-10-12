@@ -34,6 +34,7 @@ TTC_IMMINENT = 30.0   # LPLC2: under 0.5 s
 NEAR_BIG = 500.0      # px: proximity floor for boss parts
 NEAR_SMALL = 200.0    # px: proximity floor for projectiles hovering close without closing
 BEAM_PX = 260.0       # deathray: perpendicular distance at which LC22 starts
+BEAM_RAD = 0.6        # ... or angular gap (from the beam's origin) at which it starts (v3.1)
 MX = 150.0            # Hz
 
 
@@ -69,7 +70,12 @@ def scene_rates_v3(state, arena=None, above_px=60.0, sumw=0.5):
                 perp = abs(-qx * uy + qy * ux)
                 # side the beam is on, relative to the fly
                 bx = pr["cx"] + ux * along
-                add("LC22", 1 if bx >= pcx else -1, 1.0 - perp / BEAM_PX)
+                # v3.1 (2026-10-12): also by ANGULAR gap from the beam's origin. Live, LC22 was
+                # silent 0.3 s before 18 of 49 deathray hits: a beam sweeping in at ~0.0116
+                # rad/tick from ~1 rad away crosses the old 260 px band in ~0.4 s. Within
+                # BEAM_RAD of the fly's bearing it now ramps up (~0.9 s of warning).
+                gap = abs(math.atan2(-qx * uy + qy * ux, along))
+                add("LC22", 1 if bx >= pcx else -1, max(1.0 - perp / BEAM_PX, 1.0 - gap / BEAM_RAD))
             continue
         ttc, d = _ttc(rx, ry, pr.get("vx", 0.0) - pvx, pr.get("vy", 0.0) - pvy)
         r = max(1.0 - ttc / TTC_SMALL, 1.0 - d / NEAR_SMALL)   # time to contact, plus a close-by floor
