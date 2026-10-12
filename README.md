@@ -11,13 +11,14 @@ A simulated fruit-fly brain plays Terraria. The brain is the whole-brain leaky i
 | Expert, no Nurse | 0 / 10 | 38 s | ~14 |
 | Normal, no Nurse | 4 / 10 | 78 s | ~16 |
 | Expert + Nurse (hand-built house) | **9 / 10** | 130 s | 14.1 |
-| **Master** + Nurse (hand-built house) | 1 / 10 | 59 s | 14.9 |
+| **Master** + Nurse (hand-built house) | 1 / 10 | 59 s | 13.9 |
+| **Master** + Nurse, eye-dodging fly | **3 / 10** | **131 s** | **11.1** |
 
 Same setup, other controllers: scripted dodger 3/5 wins (15.1 hits/min); standing still 1/5 (31.9 hits/min). A control brain with a **shuffled connectome** and the same readout neurons barely moves and loses like standing still, so the dodging depends on the real wiring.
 
 ## Next major steps
 1. **Master mode**, the hardest difficulty (same arena, Nurse house and loadout; Master unlocks the 7th accessory slot the loadout already uses).
-2. **Minimise the hits the fly takes** each fight, and with them the Nurse trips. Work through the Moon Lord's attacks one at a time, most damaging first. Master ranking (share of damage taken): homing eyes 22%, bolts 19%, deathray 14% (biggest single hits), tongue 13%, spheres 11%, body contact 18% across all parts.
+2. **Minimise the hits the fly takes** each fight, and with them the Nurse trips. Work through the Moon Lord's attacks one at a time, most damaging first. First target done: homing eyes (22% of the fly's damage on Master) -- retrained to dodge them, eye damage per minute fell 67% live. New Master ranking: deathray 18% (biggest single hits), bolts 14%, tongue 13%, spheres 11%, body contact 27% across all parts, homing eyes 8%.
 3. **Give the fly more autonomy.** Hand every scripted decision to the fly's brain, one at a time, keeping scripts only as fallbacks. Today the brain moves the character on 84% of fight ticks and pilots its own climb out of the Nurse room (25/25 trips on Master, ~0.4 s each). Still scripted: the Nurse trips (15.5% of ticks), the arena leash (edits 12.8% of the fly's ticks), the whip (swing, aim, target), healing potions. Minions stay with the game's AI, as for a human summoner.
 
 ## How the fly works
