@@ -119,6 +119,25 @@ _FIT_PATH = Path(__file__).resolve().parent / "fake_fit.json"
 FITTED = json.loads(_FIT_PATH.read_text())["config"] if _FIT_PATH.exists() else {}
 
 SIZES = {MOON_LEECH: 16, PHANTASMAL_BOLT: 8, PHANTASMAL_SPHERE: 40, PHANTASMAL_EYE: 14, PHANTASMAL_DEATHRAY: 36}  # measured hitboxes
+SOURCE = {PHANTASMAL_EYE: "eye", PHANTASMAL_BOLT: "bolt", PHANTASMAL_SPHERE: "sphere",
+          PHANTASMAL_DEATHRAY: "deathray", MOON_LEECH: "tongue"}
+
+# Master mode (live 2026-10-11, "The Violent Heart", 10 fly + 5 idle fights;
+# hit_sources.py): damage per hit MEASURED live, by source -- homing eye 125,
+# bolt 101, deathray 278, sphere 156, tongue 123, body contact ~120 -- used
+# directly. Moon Lord parts have 1.275x the Expert HP (core 95,625 vs 75,000).
+# Minion damage vs distance is unchanged from Expert; attack timing is assumed
+# unchanged (Master runs the Expert AI).
+MASTER = {"eye_damage": 125, "bolt_damage": 101, "ray_damage": 278, "sphere_damage": 156,
+          "leech_damage": 123, "contact_damage": 120,
+          # Homing eyes rebuilt from the live Master tracks (1,353 eye tracks): they leave the
+          # HANDS (not the head), fly at ~8-14 px/tick, turn gently (median ~0.01 rad/tick, p90
+          # ~0.04), overshoot and loop back. Speed 11 +-30%, turn 0.03, a volley every 160 ticks
+          # gives the senses3 teacher 5.7 eye hits/min offline vs the fly's 4.9 live.
+          "eye_origin": "hands", "eye_speed": 11.0, "eye_speed_spread": 0.3, "eye_turn": 0.03,
+          "eye_period": 160, "eye_life": 300}
+MASTER_HP = 1.275
+
 DEFAULT_DAMAGE = {PHANTASMAL_BOLT: 71, PHANTASMAL_SPHERE: 126, PHANTASMAL_EYE: 66, PHANTASMAL_DEATHRAY: 78}
 
 
@@ -137,6 +156,13 @@ class FakeMoonLordBridge:
 
     def __init__(self, config=None):
         self.cfg = {**DEFAULT_CONFIG, **FITTED, **(config or {})}
+        if self.cfg.get("difficulty") == "master":
+            for k, v in MASTER.items():
+                if k not in (config or {}):
+                    self.cfg[k] = v
+            if "part_hp" not in (config or {}):
+                self.cfg["part_hp"] = {k: v * MASTER_HP for k, v in self.cfg["part_hp"].items()}
+                self.cfg["boss_hp"] = sum(self.cfg["part_hp"].values())
         self.rng = random.Random(self.cfg["seed"])
         c = self.cfg
         self.spawn_x, self.floor = 0.0, c["floor_y"]
@@ -195,7 +221,8 @@ class FakeMoonLordBridge:
 
     # ---- Nurse protocol (NurseBay.cs) -------------------------------------
     def _cmd_build_nurse_house(self, p):
-        self.house = (self.spawn_x, self.floor + 16 * p.get("depth_tiles", 40))
+        # house_depth_tiles (config) wins: the hand-built v5 house sits right under the floor (6).
+        self.house = (self.spawn_x, self.floor + 16 * self.cfg.get("house_depth_tiles", p.get("depth_tiles", 40)))
         self.nurse_hp = 250
         return {"ok": True, "house": {"x": int(self.house[0] // 16), "y": int(self.house[1] // 16)}}
 
@@ -377,13 +404,14 @@ class FakeMoonLordBridge:
     # ---- simulation -------------------------------------------------------
     def _reset_counters(self):
         self.ticks = self.hits = self.damage_taken = self.deaths = 0
+        self.damage_by = {}
         self.boss_killed, self.boss_kill_tick = False, -1
         self.grabbed = 0
         self.on_row = False
 
     def _episode(self):
         return {"ticks": self.ticks, "seconds": self.ticks / TICKS_PER_S, "hits": self.hits,
-                "damage_taken": self.damage_taken, "deaths": self.deaths,
+                "damage_taken": self.damage_taken, "deaths": self.deaths, "damage_by": dict(self.damage_by),
                 "boss_killed": self.boss_killed, "boss_kill_tick": self.boss_kill_tick,
                 "keep_focus": self.keep_focus,
                 "arena": {"x": self.arena[0], "y": self.arena[1]} if self.arena else None,
@@ -445,7 +473,7 @@ class FakeMoonLordBridge:
             self.px += self.vx
             self.py += self.vy
             if self.grabbed == 0:
-                self._hurt(c["leech_damage"])
+                self._hurt(c["leech_damage"], "tongue")
             return
         h = (1 if a.get("right") else 0) - (1 if a.get("left") else 0)
         self.vx, self.vy = movement.step(self.vx, self.vy, h, movement.mode_of(a), self._on_ground())
@@ -546,7 +574,7 @@ class FakeMoonLordBridge:
         # hit source for the scripted dodger once it kept farther from the core).
         for bx, by in [(b["cx"] + dx, b["cy"] + dy) for dx, dy in self._offsets().values()]:
             if math.hypot(pcx - bx, pcy - by) < c["contact_radius"]:
-                self._hurt(c["contact_damage"])
+                self._hurt(c["contact_damage"], "contact")
         if not c["boss_attacks"]:
             return
         t = self.ticks
@@ -558,7 +586,8 @@ class FakeMoonLordBridge:
             if t % c["true_eye_period"] == 0:
                 dx, dy = off[nm]
                 for _ in range(c["true_eye_shots"]):
-                    self._aimed(PHANTASMAL_EYE, b["cx"] + dx, b["cy"] + dy - 60, c["eye_speed"], c["eye_damage"],
+                    sp = c["eye_speed"] * self.rng.uniform(1 - c.get("eye_speed_spread", 0.0), 1 + c.get("eye_speed_spread", 0.0))
+                    self._aimed(PHANTASMAL_EYE, b["cx"] + dx, b["cy"] + dy - 60, sp, c["eye_damage"],
                                 spread=0.8, homing=c["eye_turn"], life=c["eye_life"])
         if alive_hands and t % c["bolt_period"] == 0:
             hx, hy = self.rng.choice(alive_hands)
@@ -575,8 +604,13 @@ class FakeMoonLordBridge:
                         homing=c["leech_turn"], life=c["leech_life"])
         if head_alive and t % c["eye_period"] == 0:
             for _ in range(3):
-                self._aimed(PHANTASMAL_EYE, head[0] + self.rng.uniform(-200, 200), head[1],
-                            c["eye_speed"], c["eye_damage"], spread=0.8, homing=c["eye_turn"], life=c["eye_life"])
+                # live Master logs: eyes leave the HANDS (and True Eyes), not the head
+                if c.get("eye_origin") == "hands" and alive_hands:
+                    ox, oy = self.rng.choice(alive_hands)
+                else:
+                    ox, oy = head[0] + self.rng.uniform(-200, 200), head[1]
+                sp = c["eye_speed"] * self.rng.uniform(1 - c.get("eye_speed_spread", 0.0), 1 + c.get("eye_speed_spread", 0.0))
+                self._aimed(PHANTASMAL_EYE, ox, oy, sp, c["eye_damage"], spread=0.8, homing=c["eye_turn"], life=c["eye_life"])
         if head_alive and t >= c["ray_first"] and (t - c["ray_first"]) % c["ray_period"] == 0:
             hy = b["cy"] - 400.0
             ang = math.atan2(pcy - hy, pcx - b["cx"]) - c["ray_sweep"] / 2 * self.rng.choice((-1, 1))
@@ -645,7 +679,7 @@ class FakeMoonLordBridge:
                 along = rx * p.vx + ry * p.vy
                 perp = abs(-rx * p.vy + ry * p.vx)
                 if 0 <= along <= c["ray_length"] and perp <= c["ray_width"] / 2 + hw:
-                    self._hurt(p.damage)
+                    self._hurt(p.damage, SOURCE.get(p.type, "other"))
             else:
                 if p.homing:
                     speed = math.hypot(p.vx, p.vy) or 1.0
@@ -662,18 +696,19 @@ class FakeMoonLordBridge:
                         if not getattr(self, "grabbed", 0) and not self.dead:
                             self.grabbed = self.cfg["leech_grab_ticks"]
                         continue
-                    if self._hurt(p.damage):
+                    if self._hurt(p.damage, SOURCE.get(p.type, "other")):
                         continue  # projectile is used up by the hit
             if p.life > 0 and abs(p.x - pcx) < 4000 and abs(p.y - pcy) < 4000:
                 keep.append(p)
         self.projs = keep
 
-    def _hurt(self, damage):
+    def _hurt(self, damage, source="other"):
         if self.immune > 0 or self.dead:
             return False
         self.hp -= damage
         self.hits += 1
         self.damage_taken += damage
+        self.damage_by[source] = self.damage_by.get(source, 0) + damage
         self.immune = self.cfg["immune_ticks"]
         if self.hp <= 0:
             self.dead, self.dead_ticks = True, 0

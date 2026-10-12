@@ -88,7 +88,23 @@ class SceneFly3Policy(scene3.V3Policy):
 
 
 def _teacher():
-    return scene3.V3Policy(json.loads(TEACHER.read_text())["weights"], arena())
+    return scene3.V3Policy(json.loads(Path(_OPTS.get("teacher", TEACHER)).read_text())["weights"], arena())
+
+
+_OPTS = {}   # per-worker options (teacher file, master) set by _set_opts
+
+
+def _set_opts(opts):
+    _OPTS.update(opts)
+
+
+def _fake(seed, randomize):
+    from fake_bridge import FakeMoonLordBridge
+    from train_fly_cma import randomized
+    cfg = {"seed": seed, **randomized({}, seed, randomize)}
+    if _OPTS.get("master"):
+        cfg["difficulty"] = "master"
+    return FakeMoonLordBridge(cfg)
 
 
 def _record(brain, st, X):
@@ -136,13 +152,12 @@ def _collect_job(job):
 
         for seed in seeds:
             brain.reset_state(seed=seed)
-            harness.run_episode(FakeMoonLordBridge({"seed": seed, **randomized({}, seed, randomize)}),
-                                Recorder(teacher.w, teacher.arena), cfg, seed)
+            harness.run_episode(_fake(seed, randomize), Recorder(teacher.w, teacher.arena), cfg, seed)
     return np.array(X), np.array(H), np.array(V)
 
 
 def _run_jobs(jobs, workers):
-    with mp.get_context("spawn").Pool(workers) as pool:
+    with mp.get_context("spawn").Pool(workers, _set_opts, (dict(_OPTS),)) as pool:
         res = [r for r in pool.map(_collect_job, jobs) if len(r[0])]
     return (np.concatenate([r[0] for r in res]), np.concatenate([r[1] for r in res]),
             np.concatenate([r[2] for r in res]))
@@ -153,7 +168,7 @@ def collect(args):
     t0 = time.time()
     X, H, V = _run_jobs([(args.engine, args.null, seeds[i::args.workers], args.randomize, None)
                          for i in range(args.workers)], args.workers)
-    out = ROOT / "logs" / "moonlord" / f"scene3_{args.engine}_{args.null}.npz"
+    out = ROOT / "logs" / "moonlord" / f"scene3_{args.engine}_{args.null}{'_' + Path(args.teacher).stem if Path(args.teacher) != TEACHER else ''}.npz"
     np.savez(out, X=X, H=H, V=V, n_teacher=len(X))
     print(f"{len(X)} ticks [{time.time() - t0:.0f}s] -> {out.relative_to(ROOT)}")
 
@@ -190,13 +205,14 @@ def fit(args):
     r2 = lambda w, y: float(1 - np.mean((F[te] @ w - y[te]) ** 2) / np.var(y[te]))
     print(f"readout {len(cols)} DNs, active {(X[:, cols].mean(0) > 1).sum()}; held-out R^2 sideways {r2(wh, H):.3f}, "
           f"vertical {r2(wv, V):.3f}")
-    tw = json.loads(TEACHER.read_text())["weights"]
+    tw = json.loads(Path(args.teacher).read_text())["weights"]
     n2 = 2 * (len(scene3.CHANNELS) + 3)
-    out = HERE / "params" / f"{Path(args.data).stem}.json"
+    out = Path(args.out) if args.out else HERE / "params" / f"{Path(args.data).stem}.json"
     out.write_text(json.dumps({"readout": {"wh": wh.tolist(), "wv": wv.tolist(), "thr": abs(tw[n2]),
                                            "hold": abs(tw[n2 + 1]) * 20, "override": abs(tw[n2 + 2]) * 2,
                                            "dn_ids": [int(ALL_DNS[i]) for i in cols]},
                                "meta": {"what": "scene fly v3 (scene_fly3.py)", "data": Path(args.data).name,
+                                        "teacher": Path(args.teacher).name,
                                         "r2_sideways": r2(wh, H), "r2_vertical": r2(wv, V),
                                         "finished": time.strftime("%Y-%m-%d %H:%M:%S")}}, indent=1) + "\n")
     print(f"wrote {out.relative_to(ROOT)}")
@@ -213,24 +229,29 @@ def _eval_job(job):
     lo = json.loads((HERE / "loadout.json").read_text())
     cfg = harness.config_from_loadout(lo, "fight", "balanced")
     cfg["max_seconds"] = {"fight": 180.0}
+    cfg["max_seconds"] = {"fight": _OPTS.get("fight_seconds", 180.0)}
     rows = []
     for seed in seeds:
         brain.reset_state(seed=seed)
-        r = harness.run_episode(FakeMoonLordBridge({"seed": seed, **randomized({}, seed, randomize)}),
-                                SceneFly3Policy(ro, brain=brain), cfg, seed)
-        rows.append((r["seconds"], 1 - r["boss_parts_frac_left"]))
+        b = _fake(seed, randomize)
+        r = harness.run_episode(b, SceneFly3Policy(ro, brain=brain), cfg, seed)
+        mins = max(r["seconds"], 1.0) / 60.0
+        rows.append((r["seconds"], 1 - r["boss_parts_frac_left"], b.damage_by.get("eye", 0) / mins,
+                     (sum(b.damage_by.values()) - b.damage_by.get("eye", 0)) / mins, 60 * r["hits"] / max(r["seconds"], 1)))
     return rows
 
 
 def evaluate(args):
     seeds = list(range(5000, 5000 + args.fights))
     t0 = time.time()
-    with mp.get_context("spawn").Pool(args.workers) as pool:
+    with mp.get_context("spawn").Pool(args.workers, _set_opts, (dict(_OPTS),)) as pool:
         rows = [r for part in pool.map(_eval_job, [(args.engine, args.null, args.params, seeds[i::args.workers],
                                                      args.randomize) for i in range(args.workers)]) for r in part]
     secs = sorted(r[0] for r in rows)
-    print(f"{Path(args.params).stem} on {args.engine}/{args.null}: median survival {secs[len(secs) // 2]:.1f}s, "
-          f"boss damage {100 * np.mean([r[1] for r in rows]):.1f}%  ({len(rows)} fights, {time.time() - t0:.0f}s)")
+    print(f"{Path(args.params).stem} on {args.engine}/{args.null}{' MASTER' if _OPTS.get('master') else ''}: "
+          f"median survival {secs[len(secs) // 2]:.1f}s, boss damage {100 * np.mean([r[1] for r in rows]):.1f}%, "
+          f"eye dmg/min {np.mean([r[2] for r in rows]):.0f}, other dmg/min {np.mean([r[3] for r in rows]):.0f}, "
+          f"hits/min {np.mean([r[4] for r in rows]):.1f}  ({len(rows)} fights, {time.time() - t0:.0f}s)")
 
 
 def main(argv=None):
@@ -246,6 +267,9 @@ def main(argv=None):
             s.add_argument("--randomize", type=float, default=0.15)
         if name == "eval":
             s.add_argument("--params", required=True)
+            s.add_argument("--fight-seconds", type=float, default=180.0)
+        s.add_argument("--teacher", default=str(TEACHER))
+        s.add_argument("--master", action="store_true", help="the Master-mode fake (fake_bridge MASTER profile)")
         if name == "dagger":
             s.add_argument("logs", nargs="+")
             s.add_argument("--out", required=True)
@@ -254,7 +278,11 @@ def main(argv=None):
     f.add_argument("--data", required=True)
     f.add_argument("--ridge", type=float, default=1.0)
     f.add_argument("--dagger-weight", type=float, default=4.0)
+    f.add_argument("--teacher", default=str(TEACHER), help="the teacher whose hold/override/threshold the fly uses")
+    f.add_argument("--out", default=None)
     args = ap.parse_args(argv)
+    if args.cmd != "fit":
+        _OPTS.update(teacher=args.teacher, master=args.master, fight_seconds=getattr(args, "fight_seconds", 180.0))
     {"collect": collect, "dagger": dagger, "fit": fit, "eval": evaluate}[args.cmd](args)
 
 

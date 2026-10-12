@@ -24,13 +24,15 @@ import scene3  # noqa: E402
 _W = {}
 
 
-def _init(randomize, penalty=0.5):
+def _init(randomize, penalty=0.5, objective="boss", eye_weight=1.0, master=False, fight_s=240.0):
     import harness
     import fly_params
     lo = json.loads((HERE / "loadout.json").read_text())
     cfg = harness.config_from_loadout(lo, "fight", "balanced")
-    cfg["max_seconds"] = {"fight": 240.0}
-    _W.update(cfg=cfg, randomize=randomize, arena=fly_params.arena_px(lo), penalty=penalty)
+    cfg["max_seconds"] = {"fight": fight_s}
+    cfg.pop("loadout_items", None)
+    _W.update(cfg=cfg, randomize=randomize, arena=fly_params.arena_px(lo), penalty=penalty,
+              objective=objective, eye_weight=eye_weight, master=master)
 
 
 # Where live data says the fake is trustworthy (exposure in 120+ live fights):
@@ -62,13 +64,26 @@ def _episode(job):
     from train_fly_cma import randomized
     pol = _Track(w, _W["arena"])
     pol.n = pol.out = 0
-    r = harness.run_episode(FakeMoonLordBridge({"seed": seed, **randomized({}, seed, _W["randomize"])}),
-                            pol, _W["cfg"], seed)
+    fake = {"seed": seed, **randomized({}, seed, _W["randomize"])}
+    if _W["master"]:
+        fake["difficulty"] = "master"
+    b = FakeMoonLordBridge(fake)
+    r = harness.run_episode(b, pol, _W["cfg"], seed)
     left = r["boss_parts_frac_left"]
     prog = 1.0 - (left if left is not None else 1.0)
     outside = pol.out / max(pol.n, 1)
-    # score: boss damage, minus a penalty for time spent where the fake is unvalidated
-    return prog - _W["penalty"] * outside, r["seconds"], prog, outside
+    mins = max(r["seconds"], 1.0) / 60.0
+    eye = b.damage_by.get("eye", 0) / mins
+    other = (sum(b.damage_by.values()) - b.damage_by.get("eye", 0)) / mins
+    if _W["objective"] == "hits":
+        # 2026-10-12 (user: minimise hits, most damaging attack first): damage taken per
+        # minute, the current target attack (homing eyes) weighted up; a little boss
+        # damage so it keeps fighting; the envelope penalty so it stays where the fake is valid.
+        score = -(_W["eye_weight"] * eye + other) / 1000.0 + 0.5 * prog - _W["penalty"] * outside
+    else:
+        # score: boss damage, minus a penalty for time spent where the fake is unvalidated
+        score = prog - _W["penalty"] * outside
+    return score, r["seconds"], prog, outside, eye, other
 
 
 def main(argv=None):
@@ -84,6 +99,11 @@ def main(argv=None):
     ap.add_argument("--scale", type=float, default=2.0, help="weights range +-scale")
     ap.add_argument("--sigma", type=float, default=0.3)
     ap.add_argument("--penalty", type=float, default=0.5, help="score penalty per unit fraction of time outside the live-validated envelope")
+    ap.add_argument("--objective", default="boss", choices=["boss", "hits"],
+                    help="boss = boss damage dealt; hits = damage TAKEN per minute (eye-weighted), plus a little boss damage")
+    ap.add_argument("--eye-weight", type=float, default=1.0, help="with --objective hits: weight on homing-eye damage")
+    ap.add_argument("--master", action="store_true", help="fight the Master-mode fake (fake_bridge MASTER profile)")
+    ap.add_argument("--fight-seconds", type=float, default=240.0)
     args = ap.parse_args(argv)
     from cmaes import CMAES
     train = list(range(1000, 1000 + args.train_seeds))
@@ -94,9 +114,14 @@ def main(argv=None):
         w0 = np.asarray(json.loads(Path(args.init).read_text())["weights"], dtype=float)
         x0 = np.clip((w0 / sc_ + 1) / 2, 0, 1)
     es = CMAES(x0, args.sigma, popsize=args.popsize, seed=2)
-    best = (-1.0, None)
+    best = (-float("inf"), None)
     t0 = time.time()
-    with mp.get_context("spawn").Pool(args.workers, _init, (args.randomize, args.penalty)) as pool:
+    with mp.get_context("spawn").Pool(args.workers, _init, (args.randomize, args.penalty, args.objective,
+                                                               args.eye_weight, args.master, args.fight_seconds)) as pool:
+        if args.init:   # where the warm start begins, on the held-out seeds
+            h0 = pool.map(_episode, [(list(map(float, w0)), s) for s in held])
+            print(f"start: eye dmg/min {np.mean([r[4] for r in h0]):.0f}  other dmg/min {np.mean([r[5] for r in h0]):.0f}  "
+                  f"boss {100 * np.mean([r[2] for r in h0]):.1f}%  outside {100 * np.mean([r[3] for r in h0]):.0f}%", flush=True)
         for g in range(args.generations):
             ws = [list(map(float, (u * 2 - 1) * sc_)) for u in es.ask()]
             res = pool.map(_episode, [(w, s) for w in ws for s in train])
@@ -107,15 +132,27 @@ def main(argv=None):
                 best = (sc[i], ws[i])
             print(f"gen {g:2d} best {100 * sc[i]:5.1f}%  mean {100 * np.mean(sc):5.1f}%  [{time.time() - t0:.0f}s]",
                   flush=True)
-        h = pool.map(_episode, [(best[1], s) for s in held])
+        # Pick on HELD-OUT fights between the best-of-run candidate (chosen on noisy
+        # training fights) and the CMA mean (2026-10-12: the best-of-run overfit).
+        mean_w = list(map(float, (np.clip(es.mean, 0, 1) * 2 - 1) * sc_))
+        cands = [best[1], mean_w]
+        hs = [pool.map(_episode, [(w, s) for s in held]) for w in cands]
+        pick = int(np.argmax([np.mean([r[0] for r in h]) for h in hs]))
+        print(f"held-out score: best-of-run {np.mean([r[0] for r in hs[0]]):.3f}, CMA mean {np.mean([r[0] for r in hs[1]]):.3f}"
+              f" -> {'best-of-run' if pick == 0 else 'CMA mean'}")
+        best, h = (best[0], cands[pick]), hs[pick]
     prog, secs = float(np.mean([r[2] for r in h])), float(np.median([r[1] for r in h]))
     outside = float(np.mean([r[3] for r in h]))
-    print(f"held-out: boss damage {100 * prog:.1f}%  median survival {secs:.1f}s  outside envelope {100 * outside:.0f}%")
+    eye, other = float(np.mean([r[4] for r in h])), float(np.mean([r[5] for r in h]))
+    print(f"held-out: boss damage {100 * prog:.1f}%  median survival {secs:.1f}s  outside envelope {100 * outside:.0f}%  "
+          f"eye dmg/min {eye:.0f}  other dmg/min {other:.0f}")
     out = HERE / "params" / f"{args.name}.json"
     out.write_text(json.dumps({"weights": best[1], "meta": {
         "what": "v3-senses teacher (scene3.V3Policy), NOT the fly", "train_progress": best[0],
         "heldout_progress": prog, "heldout_median_s": secs, "randomize": args.randomize,
         "heldout_outside_envelope": outside, "penalty": args.penalty, "envelope": ENVELOPE,
+        "objective": args.objective, "eye_weight": args.eye_weight, "master": args.master,
+        "heldout_eye_dmg_per_min": eye, "heldout_other_dmg_per_min": other,
         "finished": time.strftime("%Y-%m-%d %H:%M:%S")}}, indent=1) + "\n")
     print(f"wrote {out.relative_to(ROOT)}")
 
