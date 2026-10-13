@@ -1,0 +1,56 @@
+{
+  "config": {
+    "eye_turn": 0.005,
+    "eye_period": 225,
+    "bolt_period": 120,
+    "bolt_speed": 16.0,
+    "bolt_lead": 0.3446,
+    "bolt_spread": 0.152,
+    "sphere_period": 459,
+    "sphere_speed": 15.5863,
+    "sphere_lead": 0.1156,
+    "leech_period": 2500,
+    "leech_speed": 14.0,
+    "leech_turn": 0.06,
+    "contact_radius": 44.9729,
+    "ray_width": 20.0
+  },
+  "loss_fresh": 2.0410837670864814,
+  "fake_per_min": {
+    "ray": {
+      "deathray": 705,
+      "eye": 75,
+      "bolt": 115,
+      "sphere": 114,
+      "tongue": 107,
+      "contact": 208
+    },
+    "eyes": {
+      "deathray": 369,
+      "eye": 98,
+      "bolt": 110,
+      "sphere": 132,
+      "tongue": 89,
+      "contact": 362
+    }
+  },
+  "live_per_min": {
+    "ray": {
+      "deathray": 531,
+      "eye": 234,
+      "bolt": 203,
+      "sphere": 134,
+      "tongue": 71,
+      "contact": 229
+    },
+    "eyes": {
+      "deathray": 402,
+      "eye": 123,
+      "bolt": 209,
+      "sphere": 167,
+      "tongue": 194,
+      "contact": 407
+    }
+  },
+  "fitted": "2026-10-12 23:02:29"
+}

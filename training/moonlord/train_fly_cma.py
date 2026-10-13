@@ -70,8 +70,12 @@ def randomized(fake_cfg, seed, r):
     if not r:
         return fake_cfg
     import random
-    from fake_bridge import DEFAULT_CONFIG, FITTED
-    base = {**DEFAULT_CONFIG, **FITTED, **fake_cfg}
+    from fake_bridge import DEFAULT_CONFIG, FITTED, MASTER, MASTER_FIT
+    # 2026-10-12 fix: jitter around the profile the fake will actually use. Before, a
+    # Master fight was jittered around the EXPERT values, and since explicit config wins,
+    # the Master attack settings (eyes, bolts, spheres, contact) never applied in training.
+    master = {**MASTER, **MASTER_FIT} if fake_cfg.get("difficulty") == "master" else {}
+    base = {**DEFAULT_CONFIG, **FITTED, **master, **fake_cfg}
     rng = random.Random(seed * 7919 + 13)
     out = dict(fake_cfg)
     for k in RANDOMIZE_KEYS:

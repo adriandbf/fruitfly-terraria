@@ -141,6 +141,9 @@ MASTER = {"eye_damage": 125, "bolt_damage": 101, "ray_damage": 278, "sphere_dama
           # ~2.9 s (~2 rad) across them.
           "ray_first": 1068, "ray_period": 1200, "ray_duration": 175, "ray_sweep": 2.03}
 MASTER_HP = 1.275
+# Attack knobs fitted so the Master fake reproduces live per-attack damage (fit_master.py).
+_FIT_MASTER = Path(__file__).resolve().parent / "fake_fit_master.json"
+MASTER_FIT = json.loads(_FIT_MASTER.read_text())["config"] if _FIT_MASTER.exists() else {}
 
 DEFAULT_DAMAGE = {PHANTASMAL_BOLT: 71, PHANTASMAL_SPHERE: 126, PHANTASMAL_EYE: 66, PHANTASMAL_DEATHRAY: 78}
 
@@ -161,7 +164,8 @@ class FakeMoonLordBridge:
     def __init__(self, config=None):
         self.cfg = {**DEFAULT_CONFIG, **FITTED, **(config or {})}
         if self.cfg.get("difficulty") == "master":
-            for k, v in MASTER.items():
+            fit = MASTER_FIT if self.cfg.get("fit_master", True) else {}
+            for k, v in {**MASTER, **fit}.items():
                 if k not in (config or {}):
                     self.cfg[k] = v
             if "part_hp" not in (config or {}):

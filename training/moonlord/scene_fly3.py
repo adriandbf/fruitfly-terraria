@@ -101,9 +101,7 @@ def _set_opts(opts):
 def _fake(seed, randomize):
     from fake_bridge import FakeMoonLordBridge
     from train_fly_cma import randomized
-    cfg = {"seed": seed, **randomized({}, seed, randomize)}
-    if _OPTS.get("master"):
-        cfg["difficulty"] = "master"
+    cfg = {"seed": seed, **randomized({"difficulty": "master"} if _OPTS.get("master") else {}, seed, randomize)}
     return FakeMoonLordBridge(cfg)
 
 

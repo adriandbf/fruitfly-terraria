@@ -67,9 +67,7 @@ def _episode(job):
     from train_fly_cma import randomized
     pol = _Track(w, _W["arena"])
     pol.n = pol.out = pol.far = 0
-    fake = {"seed": seed, **randomized({}, seed, _W["randomize"])}
-    if _W["master"]:
-        fake["difficulty"] = "master"
+    fake = {"seed": seed, **randomized({"difficulty": "master"} if _W["master"] else {}, seed, _W["randomize"])}
     b = FakeMoonLordBridge(fake)
     r = harness.run_episode(b, pol, _W["cfg"], seed)
     left = r["boss_parts_frac_left"]
