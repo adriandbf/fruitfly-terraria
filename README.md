@@ -12,7 +12,8 @@ A simulated fruit-fly brain plays Terraria. The brain is the whole-brain leaky i
 | Normal, no Nurse | 4 / 10 | 78 s | ~16 |
 | Expert + Nurse (hand-built house) | **9 / 10** | 130 s | 14.1 |
 | **Master** + Nurse (hand-built house) | 1 / 10 | 59 s | 13.9 |
-| **Master** + Nurse, eye-dodging fly | **3 / 10** | **131 s** | **11.1** |
+| **Master** + Nurse, eye-dodging fly | 3 / 10 | 131 s | 11.1 |
+| **Master** + Nurse, eye + beam-sense fly (scene3_master_ray) | **3 / 10** | 99 s | **9.8** |
 
 Same setup, other controllers: scripted dodger 3/5 wins (15.1 hits/min); standing still 1/5 (31.9 hits/min). A control brain with a **shuffled connectome** and the same readout neurons barely moves and loses like standing still, so the dodging depends on the real wiring.
 
