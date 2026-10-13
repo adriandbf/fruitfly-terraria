@@ -237,7 +237,8 @@ def _eval_job(job):
         r = harness.run_episode(b, SceneFly3Policy(ro, brain=brain), cfg, seed)
         mins = max(r["seconds"], 1.0) / 60.0
         rows.append((r["seconds"], 1 - r["boss_parts_frac_left"], b.damage_by.get("eye", 0) / mins,
-                     (sum(b.damage_by.values()) - b.damage_by.get("eye", 0)) / mins, 60 * r["hits"] / max(r["seconds"], 1)))
+                     (sum(b.damage_by.values()) - b.damage_by.get("eye", 0)) / mins, 60 * r["hits"] / max(r["seconds"], 1),
+                     b.damage_by.get("deathray", 0) / mins, sum(b.damage_by.values()) / mins))
     return rows
 
 
@@ -251,7 +252,8 @@ def evaluate(args):
     print(f"{Path(args.params).stem} on {args.engine}/{args.null}{' MASTER' if _OPTS.get('master') else ''}: "
           f"median survival {secs[len(secs) // 2]:.1f}s, boss damage {100 * np.mean([r[1] for r in rows]):.1f}%, "
           f"eye dmg/min {np.mean([r[2] for r in rows]):.0f}, other dmg/min {np.mean([r[3] for r in rows]):.0f}, "
-          f"hits/min {np.mean([r[4] for r in rows]):.1f}  ({len(rows)} fights, {time.time() - t0:.0f}s)")
+          f"hits/min {np.mean([r[4] for r in rows]):.1f}, deathray dmg/min {np.mean([r[5] for r in rows]):.0f}, "
+          f"total dmg/min {np.mean([r[6] for r in rows]):.0f}  ({len(rows)} fights, {time.time() - t0:.0f}s)")
 
 
 def main(argv=None):
