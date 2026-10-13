@@ -15,7 +15,7 @@ A simulated fruit-fly brain plays Terraria. The brain is the whole-brain leaky i
 | **Master** + Nurse, eye-dodging fly | 3 / 10 | 131 s | 11.1 |
 | **Master** + Nurse, eye + beam-sense fly (scene3_master_ray) | **3 / 10** | 99 s | **9.8** |
 
-Same setup, other controllers: scripted dodger 3/5 wins (15.1 hits/min); standing still 1/5 (31.9 hits/min). A control brain with a **shuffled connectome** and the same readout neurons barely moves and loses like standing still, so the dodging depends on the real wiring.
+Same setup, other controllers: scripted dodger 3/5 wins (15.1 hits/min); standing still 1/5 (31.9 hits/min). A control brain with a **shuffled connectome** and the same readout neurons barely moves and loses like standing still, so the dodging depends on the real wiring. Master check (2026-10-13, offline, 12 fights each): with the shuffled connectome only 2 of the 117 readout neurons respond and the readout explains 13% of the teacher's moves (vs 92%); it takes 2,294 damage/min and 17.2 hits/min against 1,203 and 7.5 for the real wiring.
 
 ## Next major steps
 1. **Master mode**, the hardest difficulty (same arena, Nurse house and loadout; Master unlocks the 7th accessory slot the loadout already uses).
