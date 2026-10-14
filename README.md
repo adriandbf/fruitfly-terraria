@@ -1,68 +1,101 @@
 # Fruit Fly Plays Terraria
 
-A simulated fruit-fly brain plays Terraria. The brain is the whole-brain leaky integrate-and-fire model of *Drosophila* (Shiu et al.), wired from the FlyWire connectome (v783, ~127k neurons, ~15M synapses). Game state goes in through real fly sensory neurons; key presses come out of real descending neurons. The connectome's wiring is never changed: only the interface (what the fly sees, how its neuron firing becomes keys) is designed and trained.
+A simulated fruit-fly brain fights Terraria's final boss, the Moon Lord, on Master mode, and can win.
 
-**Current goal: the fly fights the Moon Lord**, the final boss, in a single-player arena, fight after fight, getting better between batches.
+The brain is the whole-brain model of *Drosophila melanogaster* from Shiu et al. (Nature, 2024): **138,639 leaky integrate-and-fire neurons and 15 million synapses**, wired exactly as in the FlyWire connectome (v783). What the fly sees in the game is delivered to real fly visual neurons, and its moves are read from real descending neurons, the cells that carry commands from a fly's brain to its body. The wiring is never changed. Only the interface around it is designed and trained: how the game becomes sensory input, and how descending-neuron firing becomes keys.
 
-## Results so far (Moon Lord, live game)
+![The brain viewer: every neuron of the fly brain at its real position, lit as it fires](docs/brain_viewer.jpg)
+*The brain viewer (`viz/`): all 138,639 neurons at their cell-body positions, glowing as they spike, with the fly's eyes on the left and its moves on the right.*
 
-| Setup | Fly wins | Median fight | Hits taken / min |
+## Results
+
+Moon Lord fights in the live game, a summoner in a purpose-built arena with a Nurse house underneath. 10 fights per row:
+
+| Fly | Difficulty | Wins | Hits taken / min |
 |---|---|---|---|
-| Expert, no Nurse | 0 / 10 | 38 s | ~14 |
-| Normal, no Nurse | 4 / 10 | 78 s | ~16 |
-| Expert + Nurse (hand-built house) | **9 / 10** | 130 s | 14.1 |
-| **Master** + Nurse (hand-built house) | 1 / 10 | 59 s | 13.9 |
-| **Master** + Nurse, eye-dodging fly | 3 / 10 | 131 s | 11.1 |
-| **Master** + Nurse, eye + beam-sense fly (scene3_master_ray) | **3 / 10** | 99 s | **9.8** |
-| **Master** + Nurse, all-attack fly (scene3_master_all) | 2 / 10 | 131 s | 12.6 |
+| Expert-trained fly | Expert, no Nurse | 0 / 10 | ~14 |
+| Expert-trained fly (`scene3_np_none`) | Expert + Nurse | **9 / 10** | 14.1 |
+| Expert-trained fly | **Master** + Nurse | 1 / 10 | 13.9 |
+| Trained to dodge the homing eyes | Master + Nurse | 3 / 10 | 11.1 |
+| + deathray-beam sense (`scene3_master_ray`, the default) | Master + Nurse | **3 / 10** | **9.8** |
+| All attacks weighted (`scene3_master_all`) | Master + Nurse | 2 / 10 | 12.6 |
 
-Same setup, other controllers: scripted dodger 3/5 wins (15.1 hits/min); standing still 1/5 (31.9 hits/min). A control brain with a **shuffled connectome** and the same readout neurons barely moves and loses like standing still, so the dodging depends on the real wiring. Master check (2026-10-13, offline, 12 fights each): with the shuffled connectome only 2 of the 117 readout neurons respond and the readout explains 13% of the teacher's moves (vs 92%); it takes 2,294 damage/min and 17.2 hits/min against 1,203 and 7.5 for the real wiring.
+The same build standing still lost all 5 of its Master fights, taking about 29 hits a minute.
 
-## Next major steps
-1. **Master mode**, the hardest difficulty (same arena, Nurse house and loadout; Master unlocks the 7th accessory slot the loadout already uses).
-2. **Minimise the hits the fly takes** each fight, and with them the Nurse trips. Work through the Moon Lord's attacks one at a time, most damaging first. First target done: homing eyes (22% of the fly's damage on Master) -- retrained to dodge them, eye damage per minute fell 67% live. New Master ranking: deathray 18% (biggest single hits), bolts 14%, tongue 13%, spheres 11%, body contact 27% across all parts, homing eyes 8%.
-3. **Give the fly more autonomy.** Hand every scripted decision to the fly's brain, one at a time, keeping scripts only as fallbacks. Today the brain moves the character on 84% of fight ticks and pilots its own climb out of the Nurse room (25/25 trips on Master, ~0.4 s each). Still scripted: the Nurse trips (15.5% of ticks), the arena leash (edits 12.8% of the fly's ticks), the whip (swing, aim, target), healing potions. Minions stay with the game's AI, as for a human summoner.
+**Does the wiring matter?** The control brain is the same model with every synapse's target shuffled (same neurons, same senses, same readout, trained with the same pipeline). In offline Master fights its descending neurons barely respond (2 of 117 fire), the readout explains 13% of the teacher's moves instead of 92%, and it takes 2,294 damage a minute against 1,203 for the real connectome. On Expert, the shuffled brain barely moved and lost like a character standing still.
 
-## How the fly works
+## How it works
+
 ```
-game state --(mod: JSON over TCP)--> senses --> fly brain (100 ms) --> descending neurons --> keys --> game
+game (tModLoader mod) --JSON over TCP--> senses --> fly brain, 100 ms --> 117 descending neurons --> readout --> keys
 ```
-- **Senses** (`training/moonlord/scene3.py`): what is approaching, from which side and how soon, as firing of real FlyWire visual populations per eye: LC4 / LPLC4 / LC6 (big things level / above / below), LC11 / LC12 (small objects), LPLC2 (about to hit), LC22 (the deathray beam), VS / HS (self-motion).
-- **Brain**: `brain/fast_sim.py` (numba, on the Mac, ~20 ms per 100 ms slice) or `brain/np_sim.py` (numpy, anywhere). Same equations as the Brian 2 model, validated against it.
-- **Readout** (`training/moonlord/scene_fly3.py`): a linear map from 117 identified descending neurons to left/right and climb/dive, trained to imitate a teacher that reads the same senses (`train_senses3.py`), refined on the fly's own fights (DAgger).
-- **Scripted helpers**, credited separately in every log (`brain` / `assist` / `leash` / `nurse`): whip swings, potion heals, the arena leash, the Nurse trip.
+
+- **Senses** (`training/moonlord/scene3.py`). Every channel is a real FlyWire visual population, one per eye, and each codes *time to contact*, as looming detectors in a real fly do:
+  LC4 (big things level with the fly), LPLC4 (approaching from above), LC6 (big things below), LC11 and LC12 (small objects, i.e. projectiles), LPLC2 (about to hit), LC22 (the sweeping deathray), and VS / HS (the fly's own motion).
+- **Brain** (`brain/fast_sim.py`). A numba reimplementation of the Brian 2 model, about 20 ms of compute per 100 ms of brain time, validated against Brian 2. `brain/np_sim.py` is a pure-numpy version for offline training.
+- **Readout** (`training/moonlord/scene_fly3.py`). A linear map from 117 identified descending neurons to "sideways" and "climb / dive", learned by imitating a teacher that sees the same senses, then refined on the fly's own fights (DAgger). See [training/moonlord/README.md](training/moonlord/README.md).
+- **What is scripted, and credited as such in every log:** the whip swing (minions follow its tag and do the damage, as for a human summoner), healing potions, an arena leash, and trips to the Nurse. The brain moves the character on 84% of fight ticks and flies itself back out of the Nurse room.
+
+## Watch it: one demo fight
+
+With the game running in the arena world:
+
+```bash
+python demo.py
+```
+
+It builds the brain, opens the brain viewer at **http://localhost:8765**, puts the character in the arena and summons the minions. It then waits for you to press Enter, so you can start recording, and runs one Moon Lord fight with the best fly. When the fight ends it stops; nothing is reset. The brain's activity is also saved (`logs/moonlord/<run>_brain.jsonl.gz`), and `python viz/replay.py <file>` plays it back later.
+
+Viewer keys: **H** hides the overlay, **R** toggles rotation, **E** toggles the wiring, drag to turn. For OBS, add it as a Browser Source at `http://localhost:8765/?bg=transparent` (`&hud=0` for the brain alone).
+
+Recording on another machine (e.g. a stronger Windows PC): [docs/PC_SETUP.md](docs/PC_SETUP.md).
 
 ## Setup
-- Terraria + tModLoader (v2026.07.3.0, Terraria 1.4.4 content) on the Mac; Python venv with `brain/requirements.lock.txt`.
-- The brain model and connectome data are not in this repo: clone https://github.com/philshiu/Drosophila_brain_model into `brain/Drosophila_brain_model/` (`setup_phase0.sh`); FlyWire annotations go in `brain/data/`.
-- Mod: symlink `bridge/mod/FruitFlyBridge` into tModLoader's `ModSources` and Build + Reload (`bridge/README.md`).
 
-## Running a Moon Lord batch
-In a **large** world, in the game, with the mod enabled:
-```
-python training/moonlord/harness.py --build-arena --here        # stand on open surface ground first
-python training/moonlord/harness.py --setup-character
-python training/moonlord/harness.py --build-nurse-house          # the hand-designed house (nurse_blueprint.json)
-python training/moonlord/harness.py --policy fly --params-file training/moonlord/params/scene3_np_none.json --nurse --whip-strategy balanced --episodes 10 --keep-focus
+1. **Terraria + tModLoader** (v2026.07.3.0, Terraria 1.4.4 content), and the mod in `bridge/` (link it into ModSources, **Build + Reload**; see [bridge/README.md](bridge/README.md)).
+2. **Python 3.11** with `pip install -r requirements.txt`.
+3. **Brain model and data** (not in this repo):
+   - `git clone --depth 1 https://github.com/philshiu/Drosophila_brain_model brain/Drosophila_brain_model` (the connectome tables)
+   - the FlyWire neuron annotations in `brain/data/flywire_annotations.tsv.gz` (used for neuron identities and the viewer's positions)
+   - optional, for offline training: `python brain/export_connectome_npz.py`
+4. **World and character**, once, in a large Master world:
+   ```bash
+   python training/moonlord/harness.py --setup-character        # loadout.json gear, max stats
+   python training/moonlord/harness.py --build-arena --here     # stand on open surface ground first
+   python training/moonlord/harness.py --build-nurse-house      # the hand-built house, under the arena
+   ```
+
+## Running and training
+
+```bash
+python training/moonlord/harness.py --policy fly --nurse --whip-strategy balanced --episodes 10 --keep-focus
 python training/moonlord/hit_sources.py "logs/moonlord/<run>_fly_fight_ep*.jsonl"
+python training/moonlord/report.py
+python training/moonlord/test_harness.py && python training/moonlord/test_training.py    # offline, no game
 ```
-Other policies: `idle`, `random`, `scripted`, `human` (record your own play). Designing the Nurse house: `--builder-kit` (pickaxe, hamaxe, blocks), build it under the arena, then `--scan-nurse-house`. Offline checks: `training/moonlord/test_harness.py`, `test_training.py` (no game needed; `fake_bridge.py` is an offline cartoon of the fight, calibrated to live logs).
+
+Other policies: `idle`, `random`, `scripted`, `human`. `--fake` runs the offline fight instead of the game (`--fake-master --engine np` works without numba). Training is described in [training/moonlord/README.md](training/moonlord/README.md).
 
 ## Repository layout
+
 | Path | What |
 |---|---|
-| `brain/` | brain simulators, neuron picks (`neurons.py`, `scene_neurons.json`), connectome sweeps |
-| `bridge/mod/FruitFlyBridge/` | the tModLoader mod: game state, key control, fight harness, arena, Nurse house |
-| `interface/` | encoder / decoder / live loop from the first goal (approach and flee) |
-| `training/moonlord/` | Moon Lord harness, policies, senses, training, offline fight, analysis |
-| `training/` | Phase 5 tuning and baselines (first goal) |
-| `server/` | dedicated server notes (first goal) |
+| `demo.py` | One recorded demo fight |
+| `brain/` | Brain simulators (`fast_sim.py`, `np_sim.py`), engines and controls (`brain_backend.py`), named neurons (`neurons.py`, `scene_neurons.json`), the vertical-readout sweep |
+| `bridge/` | The tModLoader mod and its Python client |
+| `training/moonlord/` | Fight harness, senses, the fly, training, the offline fight, analysis |
+| `viz/` | The brain viewer, its live feed and replay |
+| `docs/` | PC setup guide, images |
 
 ## History
-1. **Environment and brain speed**: the model ran too slowly in Brian 2 for live play, so `fast_sim.py` reimplements it (validated against Brian 2: 98% active-neuron overlap, motor-neuron spike counts matched).
-2. **Bridge**: a client-side mod exposing game state and keys over local TCP.
-3. **Approach and flee** (first goal): sugar receptor neurons drive walking toward a player; bitter receptors turned out to be a dead end for threats, while LC4 looming neurons drive the Giant Fiber escape. Phase 5 tuning plus three null baselines (random mapping, shuffled connectome, ablation) all scored zero, so the chosen neurons do real work.
-4. **Moon Lord** (current): arena, loadout and harness in the mod; offline fight calibrated to live logs; the fly's senses grew from left/right looming to direction- and time-to-contact-resolved visual populations; Nurse healing protocol; Expert wins with the Nurse.
+
+1. **Speed.** Brian 2 was too slow for live play, so `fast_sim.py` reimplements the model; against Brian 2 it agrees on which neurons are active (98% overlap) and on motor-neuron spike counts.
+2. **Bridge.** A client-side mod exposing game state and keys over local TCP.
+3. **First goal: approach and flee.** Sugar-receptor neurons drove walking toward a player; LC4 looming neurons drove the Giant Fiber escape. Three null brains (random mapping, shuffled connectome, ablation) all scored zero.
+4. **Moon Lord.** Arena, loadout and harness in the mod; an offline fight fitted to live logs; senses that grew from left/right looming to direction- and time-to-contact-resolved visual populations; the Nurse; Expert wins; then Master, cutting hits taken one attack at a time.
+
+The code of the earlier stages is in the git history at tag `archive/pre-cleanup`.
 
 ## Credits
-Brain model: Shiu, P. K. et al., *A Drosophila computational brain model reveals sensorimotor processing* (Nature, 2024), https://github.com/philshiu/Drosophila_brain_model (MIT). Connectome and annotations: FlyWire (Dorkenwald et al., Schlegel et al., Nature 2024).
+
+Brain model: Shiu, P. K. et al., *A Drosophila computational brain model reveals sensorimotor processing*, Nature (2024), https://github.com/philshiu/Drosophila_brain_model (MIT). Connectome and annotations: FlyWire (Dorkenwald et al.; Schlegel et al., Nature 2024). Terraria by Re-Logic; tModLoader by the tModLoader team.

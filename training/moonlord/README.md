@@ -1,156 +1,89 @@
-# Goal 2: Moon Lord harness (stage M0)
+# The Moon Lord fight: harness, training and analysis
 
-Runs Moon Lord fights, or dodge-gym drills, back to back with nobody at
-the keyboard. It scores every episode and records which source pressed
-each key: the fly, a script, or a random baseline.
+Everything that runs, trains and scores the fly's Moon Lord fights.
+
+## Files
 
 | File | What it is |
 | --- | --- |
-| `harness.py` | Episode runner and CLI: reset, summon minions, spawn the boss, 10 Hz loop, score |
-| `policies.py` | `idle`, `random`, `scripted` (hand-written dodger, the ceiling), `fly` (encoder → brain → decoder) |
-| `fake_bridge.py` | Offline cartoon of the fight, speaking the mod's protocol (tests now, offline dodge gym later) |
-| `test_harness.py` | Offline checks, no game and no brain needed: `python training/moonlord/test_harness.py` |
+| `harness.py` | Runs fights back to back and scores them: reset, minions, Moon Lord, 10 Hz loop, outcome. Also the one-off setup commands (character, arena, Nurse house) |
+| `scene3.py` | The fly's **senses**: game state to firing rates of real FlyWire visual populations, per eye. Also `V3Policy`, the **teacher**, which reads those senses directly |
+| `scene_fly3.py` | The **fly**: senses into the brain, 117 descending neurons out, linear readout to keys. Also collects training data, runs DAgger, fits and evaluates the readout |
+| `train_senses3.py` | CMA-ES search for the teacher's weights on the offline fight |
+| `fake_bridge.py` | The offline fight: a cartoon of the Moon Lord speaking the mod's protocol, fitted to live logs (`fake_fit.json` for Expert, `fake_fit_master.json` for Master) |
+| `fit_master.py` | Fits the Master offline fight's attack knobs to live damage by source |
+| `calibrate_master.py` | Offline Master fights for any policy, compared with live numbers |
+| `policies.py` | Baselines: `idle`, `random`, `scripted` (hand-written dodger), `human` (you) |
+| `movement.py` | Character movement model fitted to probes of the real game (run, flight, gravity) |
+| `hit_sources.py` | What hit the fly: damage per attack from per-tick logs |
+| `report.py` | Results table from `logs/moonlord/results.jsonl` |
+| `loadout.json` | The character, the arena, the buffs and the Nurse protocol settings |
+| `nurse_blueprint.json` | The hand-built Nurse house (scanned in game) |
+| `params/` | Trained teachers (`senses3_*`) and fly readouts (`scene3_*`) |
+| `test_harness.py`, `test_training.py` | Offline checks (no game, no brain) |
 
-The mod side is `bridge/mod/FruitFlyBridge/Harness.cs`, plus additions to
-`GameState.cs`, `BridgeSystem.cs` and `BridgePlayer.cs`. The protocol is
-in `bridge/README.md`.
+## A fight, tick by tick
 
-## Status
+Every 100 ms of game time: `get_state` from the mod, then the fly's senses
+are computed, the brain is run for 100 ms with those sensory neurons
+driven, the descending neurons' firing goes through the readout, and the
+resulting keys are sent with `set_action`. Each key is credited to whoever
+pressed it (`brain`, or a scripted `assist` / `leash` / `nurse`), and every
+tick is logged to `logs/moonlord/<run>_fly_fight_epNNN.jsonl`.
 
-- Offline: all 15 checks in `test_harness.py` pass.
-- Not compiled yet. No .NET SDK was available where this was written. Hook
-  signatures were checked against the tModLoader v2026.07.3.0 source, and
-  member names against `tModLoader.dll`. The first **Build + Reload** is the
-  real compile, so expect to fix a typo or two.
-- Not tried live yet: every new command, `--keep-focus`, summoning
-  minions, and the fly against real projectiles.
+Scripted helpers, the same for every policy and always credited separately:
+- **Whip assist:** swings the whip at a Moon Lord part. The minions (the
+  summoner's damage) follow the whip's tag; their aim is the game's own AI.
+- **Heal assist:** the game's Quick Heal at 300 HP or below.
+- **Leash:** stops the character leaving the arena box.
+- **Nurse protocol** (`--nurse`): when low and potion-sick, Magic Mirror
+  home, buy a heal from the Nurse, then the fly flies itself back out.
 
-## First live session (on the Mac)
+## How the fly was trained
 
-1. **Build the mod.** tModLoader → Workshop → Mod Sources → FruitFlyBridge →
-   **Build + Reload**.
-2. **Character and world. No downloads needed.** In tModLoader, create a
-   new character (Classic, softcore) and a new small world. Make the world
-   Expert if you can: Expert unlocks the sixth accessory slot (Demon
-   Heart), and raising the difficulty later means a new world anyway. Enter
-   the world, then run:
-   `python training/moonlord/harness.py --setup-character`
-   This applies `loadout.json`, a pre-Moon Lord summoner (tModLoader is on
-   Terraria 1.4.4, so this sticks to 1.4.4 items):
-   - Hallowed armour (summoner hood).
-   - Empress Wings and the Soaring Insignia.
-   - Papyrus Scarab, Necromantic Scroll, Pygmy Necklace, Ankh Shield (and
-     a Worm Scarf in Master).
-   - Stardust Dragon Staff (slot 0, fills every minion slot), Terraprisma
-     (slot 1, spare) and the Kaleidoscope whip (slot 2).
-   - Maxed life and mana.
+The connectome is never changed. What is trained is the readout from
+descending neurons to movement:
 
-   If the mod reports `unknown_items`, fix that entry in `loadout.json` and
-   rerun. Each entry can list alternatives, e.g. `["RainbowWhip", 4914]`.
-   Save and exit once so the gear sticks to the character.
-3. **Arena.** Stand on a flat open spot on the surface, then run:
-   `python training/moonlord/harness.py --build-arena`
-   If an arena mark already exists, it builds there instead and swaps any
-   old wooden-platform rows for planter boxes. It places:
-   - 16 rows of 800-tile Daybloom Planter Boxes, 12 tiles apart, so the
-     arena is about 800 tiles wide and 192 tall.
-   - Campfires every 60 tiles on rows 1, 6, 11 and 16.
-   - Heart lanterns every 60 tiles, hanging from Gray Bricks set into rows
-     3, 8 and 13.
+1. **Teacher.** `train_senses3.py` searches the weights of `V3Policy`, a
+   linear policy that sees exactly the fly's senses, on hundreds of
+   offline fights with randomized bosses (`--master --objective hits`
+   minimizes damage taken per minute, weighted by attack).
+2. **Imitation.** `scene_fly3.py collect` runs the teacher's offline fights
+   through the brain and records the descending neurons' rates; `fit`
+   learns a ridge-regression readout from those rates to the teacher's
+   sideways and vertical drives.
+3. **DAgger.** After a live batch, `scene_fly3.py dagger` relabels the
+   states the fly actually visited with the teacher's choice and refits.
+4. **Live check.** 10 Master fights with `harness.py --policy fly --nurse`,
+   then `hit_sources.py` and `report.py`.
 
-   Their buff range is about 170×125 tiles, so the whole arena is covered.
-   All of these sizes are settings in `loadout.json`. Near the ground the
-   rows only fill empty tiles, so hills and trees leave gaps.
-   The output lists every campfire and lantern with `ok: true/false`. If a
-   campfire won't stand on planter boxes, it gets a 3-brick pad and a
-   retry. The arena mark is lost when the game restarts: stand on the spot
-   and run `--mark-arena` again.
-4. **Smoke test.** Run one idle fight with minions:
-   `python training/moonlord/harness.py --policy idle` (summon slots and buffs come from `loadout.json`)
-   Check that the boss spawns, minions get cast, the episode ends on death
-   or a kill, and a line is added to `logs/moonlord/results.jsonl`.
-5. **Focus test.** Run `--policy random --keep-focus`, then click another
-   app. If the character keeps moving, focus is fixed. If it freezes or the
-   harness reports "game thread did not run the command", focus is not
-   fixed; note what happened.
-6. **Calibrate (M1).** Run 5–10 fights each of `idle` and `scripted`.
-   Raise the difficulty if idle ever wins.
+The control is the same pipeline on a **shuffled connectome**
+(`--null shuffled`, every synapse's target permuted): only 2 of the 117
+readout neurons respond, the readout can explain 13% of the teacher's
+moves (92% for the real wiring), and that fly takes about twice the damage.
 
-Then: `--policy fly`, and the dodge gym with `--mode gym` (bolts by
-default; spheres and eyes may misbehave when spawned without the boss).
+```bash
+python training/moonlord/train_senses3.py --master --objective hits --name senses3_mine
+python training/moonlord/scene_fly3.py collect --master --teacher training/moonlord/params/senses3_mine.json --fights 20
+python training/moonlord/scene_fly3.py fit --data logs/moonlord/scene3_np_none_senses3_mine.npz --teacher training/moonlord/params/senses3_mine.json
+python training/moonlord/scene_fly3.py eval --master --params training/moonlord/params/scene3_np_none_senses3_mine.json --fights 12
+python training/moonlord/scene_fly3.py dagger logs/moonlord/<run>_fly_fight_ep*.jsonl --out <data>.npz --append
+```
 
-## Live results so far
+## The params that matter
 
-- 3 idle fights (2026-10-08): all lost, at 14–18 s. Minions took Moon Lord
-  from 217.5k HP to about 190k (roughly 1,660 HP/s). Each hit did 66–131
-  damage after defense. At that rate a full kill would take about 2.2 min
-  of survival.
-- The whip assist held `use` the whole time, but no swing happened.
-  Possible causes: Terraria's use-delay gate never cleared because `use`
-  was held, and the aim was being overwritten by input zoom handling. Both
-  are patched (`BridgePlayer.Apply`, `HarnessSystem.PreUpdatePlayers`), but
-  the patch is unconfirmed. `get_state.debug` now reports the item-use
-  state (`whip_projectiles`, `item_animation`, `delay_use_item`...).
-  `report.py` checks those fields in the logs.
-- `fake_bridge.py` has been recalibrated to these fights. Offline, idle now
-  dies at about 15 s (live: 14–18 s) and the scripted dodger wins about
-  2 fights in 6.
-
-- Batch 1 (2026-10-08, 5 fights each): idle 0/9 wins (median 15.3 s),
-  random 0/6 (19.0 s), fly 0/5 (17.4 s, with 90% of boss HP left).
-  The whip swung on about 96% of ticks.
-- Bugs found and fixed:
-  - The scripted dodger crashed on its first tick whenever an arena mark
-    existed. It has now been replayed on all 5,146 logged states without
-    an error.
-  - Setup stopped casting at 6 of 9 minions. It now keeps casting until
-    the slots are full.
-  - Random keys flew 176 tiles up to the world ceiling. An arena leash
-    (a scripted assist, applied the same way to every policy and counted
-    as `leash` in the ledger) now blocks up/jump at the top row and
-    left/right at the side edges.
-- Terraprisma is now the summon cast at setup (slot 1).
-- In single player the game pauses when its window is unfocused, so
-  `--keep-focus` now also forces FNA's `Game.IsActive` back on. Untested.
+| File | What |
+| --- | --- |
+| `scene3_master_ray.json` | **The default fly.** Master, eye and deathray stage: 9.8 hits/min live, 3/10 wins |
+| `scene3_master_all.json` | Master, all attacks weighted: 12.6 hits/min, 2/10 wins, fights closer to the boss |
+| `scene3_master_eyes.json` | Master, homing-eye stage: 11.1 hits/min, 3/10 wins |
+| `scene3_np_none.json` | Expert fly: 9/10 wins with the Nurse |
+| `scene3_np_shuffled.json` | The shuffled-connectome control's readout |
+| `senses3_*.json` | The teachers the readouts above imitate |
 
 ## Recording your own play
 
-`python training/moonlord/harness.py --policy human` starts a normal fight:
-reset, potions, minions and buffs, then a 3-second countdown, then the
-Moon Lord. You steer with your own keyboard; the mod is in passthrough mode
-and only adds the whip assist and heal assist. Every tick is logged with
-the keys you held, in the same format as every other policy and credited
-`human`, so `report.py` shows you as a baseline. Useful flags:
-
-- `--no-whip-assist`: swing the whip yourself.
-- `--no-heal`: drink potions yourself (H).
-- `--mode free --max-seconds 60`: no boss, just record a movement
-  technique.
-- `--episodes 3`: record several attempts in a row.
-
-## Next live batch
-
-`bash training/moonlord/run_batch.sh` runs, unattended:
-1. 5 fights each of idle, random, scripted and fly.
-2. A `--keep-focus` test.
-3. `report.py` at the end.
-
-Keep the Terraria window in front, except during the last fight (the focus
-test). `N=10 bash training/moonlord/run_batch.sh` runs 10 fights per policy.
-
-## Known limits
-
-- **Whip assist:** with `whip_assist` on (the default in `loadout.json`), a
-  script holds the whip aimed at the nearest Moon Lord part that can take
-  damage. The ledger credits it as `assist`, never as `brain`. Turn it off
-  with `--no-whip-assist`. Aiming assumes the game zoom is 1×. The ledger
-  counts ticks per source, so with the assist on the totals add up to more
-  than the episode's ticks.
-
-- The fly's projectile sense is a stopgap: incoming projectiles are shown
-  to the existing LC4 channel as if they were hostile NPCs. Replacing it
-  with a proper encoding is stage M2.
-- The fly has no up/down yet (stage M3) and doesn't press `use`. Minions
-  do the damage.
-- `fake_bridge.py` numbers are guesses. Refit them from live logs before
-  tuning against it.
+`python training/moonlord/harness.py --policy human` runs a normal fight
+with a 3-second countdown; you steer, and your keys are logged and credited
+`human` like any other policy. `--mode free --max-seconds 60` records
+movement with no boss.

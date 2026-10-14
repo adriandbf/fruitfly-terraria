@@ -1,0 +1,8 @@
+# The live fly (numba brain) and the brain viewer. Versions as tested on the Mac (Python 3.11).
+numpy==2.5.3
+numba==0.67.0
+llvmlite==0.49.0
+pandas==3.0.6
+pyarrow==25.0.1
+# Only for brain/validate_fast_sim_v783.py (comparison against the original Brian 2 model):
+# Brian2==2.10.1
