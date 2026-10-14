@@ -16,12 +16,12 @@ function Step($msg) { Write-Host ""; Write-Host "== $msg" -ForegroundColor Cyan 
 Step "checking tools"
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "git is missing: install Git for Windows (https://git-scm.com)" }
 $py = $null
-foreach ($cand in @(@{exe = "py"; args = @("-3.11")}, @{exe = "python"; args = @()})) {
+foreach ($cand in @(@{exe = "py"; args = @("-3.12")}, @{exe = "py"; args = @("-3.13")}, @{exe = "python"; args = @()})) {
     if (-not (Get-Command $cand.exe -ErrorAction SilentlyContinue)) { continue }
-    try { $ver = & $cand.exe @($cand.args) -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>$null } catch { $ver = "" }
-    if ($ver -eq "3.11") { $py = $cand; break }
+    try { $ver = & $cand.exe @($cand.args) -c "import sys; print(sys.version_info[1] if sys.version_info[0] == 3 else 0)" 2>$null } catch { $ver = "" }
+    if ($ver -and [int]$ver -ge 12) { $py = $cand; break }
 }
-if (-not $py) { throw "Python 3.11 not found: install it from python.org (tick 'Add python.exe to PATH')" }
+if (-not $py) { throw "Python 3.12 or newer not found: install it from python.org (tick 'Add python.exe to PATH')" }
 Write-Host "python: $($py.exe) $($py.args)"
 
 Step "python environment (.venv)"

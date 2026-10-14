@@ -53,7 +53,7 @@ Recording on another machine (e.g. a stronger Windows PC): [docs/PC_SETUP.md](do
 ## Setup
 
 1. **Terraria + tModLoader** (v2026.07.3.0, Terraria 1.4.4 content), and the mod in `bridge/` (link it into ModSources, **Build + Reload**; see [bridge/README.md](bridge/README.md)).
-2. **Python 3.11** with `pip install -r requirements.txt`.
+2. **Python 3.12+** with `pip install -r requirements.txt`.
 3. **Brain model and data** (not in this repo):
    - `git clone --depth 1 https://github.com/philshiu/Drosophila_brain_model brain/Drosophila_brain_model` (the connectome tables)
    - the FlyWire neuron annotations in `brain/data/flywire_annotations.tsv.gz` (used for neuron identities and the viewer's positions)

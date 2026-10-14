@@ -25,7 +25,7 @@ USB stick, a cloud drive or similar. Also push the repo so the PC can clone it.
 
 - **Steam, Terraria and tModLoader**, signed in to the Steam account that owns them. Launch tModLoader once so it creates its folders, then quit.
 - **Git for Windows**: https://git-scm.com
-- **Python 3.11** from https://python.org. Tick *Add python.exe to PATH* in the installer.
+- **Python 3.12** from https://python.org. Tick *Add python.exe to PATH* in the installer.
 - Access to the private repo: GitHub Desktop, or `git` with a personal access token.
 
 ## 3. On the PC: clone and run the setup script
@@ -41,7 +41,7 @@ powershell -ExecutionPolicy Bypass -File setup_pc.ps1 -Bundle C:\path\to\fruitfl
 ```
 
 `setup_pc.ps1`:
-1. creates `.venv` and installs `requirements.txt` (numpy, numba, pandas, pyarrow),
+1. creates `.venv` and installs `requirements.txt` (numpy, numba, pandas, pyarrow, Brian 2, joblib),
 2. clones the Shiu et al. brain model into `brain\Drosophila_brain_model` (about 370 MB),
 3. copies the world and character into `Documents\My Games\Terraria\tModLoader\Worlds` and `Players`, and the arena mark, Nurse house and annotations into the repo,
 4. links `bridge\mod\FruitFlyBridge` into tModLoader's `ModSources` (a directory junction, no admin rights needed),

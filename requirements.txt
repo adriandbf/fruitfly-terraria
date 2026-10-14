@@ -1,8 +1,10 @@
-# The live fly (numba brain) and the brain viewer. Versions as tested on the Mac (Python 3.11).
-numpy==2.5.3
-numba==0.67.0
-llvmlite==0.49.0
-pandas==3.0.6
-pyarrow==25.0.1
-# Only for brain/validate_fast_sim_v783.py (comparison against the original Brian 2 model):
-# Brian2==2.10.1
+# The live fly (numba brain), the brain viewer, and the original model it reads its
+# parameters from (brain/Drosophila_brain_model/model.py needs Brian 2 and joblib).
+# Brian 2.10+ (the first to work with numpy 2.4+) needs Python 3.12 or newer.
+numpy>=2.0
+numba>=0.60
+pandas>=2.2
+pyarrow>=15
+Brian2>=2.10
+joblib
+cython
