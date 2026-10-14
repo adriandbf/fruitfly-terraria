@@ -136,7 +136,7 @@
     precision highp float;
     in vec3 pos; in float cls;
     uniform sampler2D heat; uniform int texW;
-    uniform float yaw, pitch, scale, aspect, dpr, baseSize;
+    uniform float yaw, pitch, scale, aspect, dpr, baseSize, sizeK;
     out vec3 vColor; out float vHeat;
     vec3 classColor(float c) {
       if (c < 0.5) return vec3(0.31, 0.85, 1.0);       // optic lobe
@@ -156,7 +156,7 @@
       gl_Position = vec4(p.x * scale * persp / aspect, p.y * scale * persp, 0.0, 1.0);
       vHeat = clamp(h, 0.0, 1.6);
       vColor = classColor(cls);
-      gl_PointSize = (baseSize + 9.0 * sqrt(min(vHeat, 1.6))) * dpr * persp;
+      gl_PointSize = (baseSize + 9.0 * sqrt(min(vHeat, 1.6))) * dpr * persp * sizeK;
     }`;
   const FS_POINTS = `#version 300 es
     precision highp float;
@@ -368,7 +368,13 @@
         gl.uniform1f(gl.getUniformLocation(prog, "pitch"), view.pitch);
         gl.uniform1f(gl.getUniformLocation(prog, "scale"), scale());
         gl.uniform1f(gl.getUniformLocation(prog, "aspect"), aspect);
-        if (prog === progP) { gl.uniform1f(gl.getUniformLocation(prog, "dpr"), dpr); gl.uniform1f(gl.getUniformLocation(prog, "baseSize"), 1.6); }
+        if (prog === progP) {
+          // dots scale with the brain's size on screen (reference: ~1370 px wide)
+          const brainPx = 880 * scale() / aspect * innerWidth / 2;
+          gl.uniform1f(gl.getUniformLocation(prog, "dpr"), dpr);
+          gl.uniform1f(gl.getUniformLocation(prog, "baseSize"), 1.6);
+          gl.uniform1f(gl.getUniformLocation(prog, "sizeK"), Math.max(0.55, Math.min(2.2, brainPx / 1370)));
+        }
         gl.bindVertexArray(vao);
         if (prog === progE) gl.drawArrays(gl.LINES, 0, nEdgeVerts); else gl.drawArrays(gl.POINTS, 0, N);
       }
