@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fly Brain Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #04060a;
+    --ink: #d8e2ee;
+    --dim: #6c7a8c;
+    --faint: #263140;
+    --optic: #4fd8ff;
+    --central: #ffb04a;
+    --vpn: #8dff7a;
+    --dn: #ff4fa8;
+    --left: #4fd8ff;
+    --right: #ffb04a;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+    --cond: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden; }
+  body.transparent { background: transparent; }
+  canvas#brain { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  canvas#tags { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; }
+  .hud { position: fixed; font-family: var(--mono); font-size: 12px; letter-spacing: 0.02em; pointer-events: none; }
+  .hidden .hud, .hidden #tags { display: none; }
+  #title { top: 22px; left: 26px; }
+  #title h1 { font-family: var(--cond); font-weight: 600; font-size: 22px; letter-spacing: 0.08em; margin: 0 0 4px; text-transform: uppercase; }
+  #title .sub { color: var(--dim); }
+  #stats { top: 22px; right: 26px; text-align: right; line-height: 1.6; }
+  #stats b { font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
+  #stats span { color: var(--dim); }
+  .bar { display: inline-block; width: 120px; height: 5px; background: var(--faint); vertical-align: middle; margin-left: 8px; position: relative; }
+  .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--ink); }
+  #hp i { background: #6ef08e; }
+  #boss i { background: #b88cff; }
+  .panel { bottom: 22px; background: rgba(4, 6, 10, 0.55); padding: 12px 14px 10px; border-top: 1px solid var(--faint); }
+  .panel h2 { font-family: var(--cond); font-weight: 600; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; margin: 0 0 8px; color: var(--dim); }
+  #senses { left: 26px; width: 330px; }
+  .srow { display: grid; grid-template-columns: 1fr 52px 1fr; align-items: center; height: 16px; }
+  .srow .l, .srow .r { height: 6px; background: var(--faint); position: relative; }
+  .srow .l i { position: absolute; right: 0; top: 0; bottom: 0; background: var(--left); transition: width 90ms linear; }
+  .srow .r i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--right); transition: width 90ms linear; }
+  .srow .n { text-align: center; color: var(--ink); font-size: 11px; }
+  .srow .what { grid-column: 1 / -1; }
+  .legend { display: flex; justify-content: space-between; color: var(--dim); font-size: 10.5px; margin-top: 6px; }
+  #motor { right: 26px; width: 300px; }
+  #keys { display: flex; gap: 6px; margin-bottom: 10px; }
+  #keys div { flex: 1; text-align: center; padding: 5px 0; border: 1px solid var(--faint); color: var(--dim); font-size: 11px; }
+  #keys div.on { color: var(--bg); background: var(--dn); border-color: var(--dn); }
+  #keys div.on.script { background: var(--dim); border-color: var(--dim); }
+  #dns { display: grid; grid-template-columns: repeat(39, 1fr); gap: 1px; margin-bottom: 8px; }
+  #dns i { display: block; height: 7px; background: var(--faint); }
+  #drive { display: flex; align-items: center; gap: 12px; color: var(--dim); font-size: 11px; }
+  #pad { width: 54px; height: 54px; border: 1px solid var(--faint); position: relative; flex: none; }
+  #pad::before, #pad::after { content: ""; position: absolute; background: var(--faint); }
+  #pad::before { left: 50%; top: 0; bottom: 0; width: 1px; }
+  #pad::after { top: 50%; left: 0; right: 0; height: 1px; }
+  #dot { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; background: var(--dn); border-radius: 50%; left: 50%; top: 50%; box-shadow: 0 0 10px var(--dn); transition: left 90ms linear, top 90ms linear; }
+  #phase { top: 50%; left: 50%; transform: translate(-50%, -50%); font-family: var(--cond); font-weight: 600; font-size: 15px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); opacity: 0; transition: opacity 300ms; text-align: center; }
+  #phase.show { opacity: 1; }
+  #phase.end { font-size: 44px; color: var(--ink); text-shadow: 0 0 30px rgba(255, 255, 255, 0.25); }
+  #phase small { display: block; font-family: var(--mono); font-size: 13px; letter-spacing: 0.04em; text-transform: none; color: var(--dim); margin-top: 10px; }
+  #help { bottom: 6px; left: 50%; transform: translateX(-50%); color: #3a4656; font-size: 10.5px; }
+  #conn { top: 76px; left: 26px; color: var(--dim); font-size: 11px; }
+</style>
+</head>
+<body>
+<canvas id="brain"></canvas>
+<canvas id="tags"></canvas>
+
+<div class="hud" id="title">
+  <h1>Fruit fly brain, live</h1>
+  <div class="sub">138,639 neurons &middot; FlyWire connectome &middot; viewed from behind the fly</div>
+</div>
+<div class="hud" id="conn">connecting&hellip;</div>
+
+<div class="hud" id="stats">
+  <div><span>fight time</span> <b id="t">0.0 s</b></div>
+  <div><span>neurons firing</span> <b id="active">0</b></div>
+  <div><span>spikes / s</span> <b id="sps">0</b></div>
+  <div><span>fly HP</span><span class="bar" id="hp"><i></i></span></div>
+  <div><span>Moon Lord</span><span class="bar" id="boss"><i></i></span></div>
+</div>
+
+<div class="hud panel" id="senses">
+  <h2>Eyes &rarr; brain</h2>
+  <div id="srows"></div>
+  <div class="legend"><span style="color:var(--left)">&larr; left eye</span><span>visual neurons driven (Hz)</span><span style="color:var(--right)">right eye &rarr;</span></div>
+</div>
+
+<div class="hud panel" id="motor">
+  <h2>Brain &rarr; movement</h2>
+  <div id="keys"><div data-k="left">&larr; LEFT</div><div data-k="right">RIGHT &rarr;</div><div data-k="jump">CLIMB</div><div data-k="down">DIVE</div></div>
+  <div id="dns"></div>
+  <div id="drive"><div id="pad"><div id="dot"></div></div><div>117 descending neurons &rarr; a linear readout &rarr; which way to fly. Grey keys are scripted helpers.</div></div>
+</div>
+
+<div class="hud" id="phase"></div>
+<div class="hud" id="help">H hide overlay &middot; R rotate &middot; E edges &middot; drag to turn</div>
+
+<script>
+(() => {
+  const params = new URLSearchParams(location.search);
+  if (params.get("bg") === "transparent") document.body.classList.add("transparent");
+  if (params.get("hud") === "0") document.body.classList.add("hidden");
+
+  // ---- senses panel ----
+  const SENSES = [
+    ["LC4", "big things, level"], ["LPLC4", "approaching from above"], ["LC6", "big things below"],
+    ["LC11", "small objects (projectiles)"], ["LC12", "small objects below"], ["LPLC2", "about to hit"],
+    ["LC22", "deathray beam"], ["VS", "self-motion, vertical"], ["HS", "self-motion, horizontal"]];
+  const srows = document.getElementById("srows");
+  const senseBars = {};
+  for (const [k, what] of SENSES) {
+    const row = document.createElement("div");
+    row.className = "srow";
+    row.title = what;
+    row.innerHTML = `<div class="l"><i style="width:0"></i></div><div class="n">${k}</div><div class="r"><i style="width:0"></i></div>`;
+    srows.appendChild(row);
+    senseBars[k + "_left"] = row.querySelector(".l i");
+    senseBars[k + "_right"] = row.querySelector(".r i");
+  }
+
+  // ---- WebGL ----
+  const canvas = document.getElementById("brain");
+  const gl = canvas.getContext("webgl2", { antialias: true, premultipliedAlpha: false, alpha: true });
+  const tagCanvas = document.getElementById("tags");
+  const tg = tagCanvas.getContext("2d");
+  if (!gl) { document.getElementById("conn").textContent = "WebGL2 is not available in this browser."; return; }
+
+  const VS_POINTS = `#version 300 es
+    precision highp float;
+    in vec3 pos; in float cls;
+    uniform sampler2D heat; uniform int texW;
+    uniform float yaw, pitch, scale, aspect, dpr, baseSize;
+    out vec3 vColor; out float vHeat;
+    vec3 classColor(float c) {
+      if (c < 0.5) return vec3(0.31, 0.85, 1.0);       // optic lobe
+      if (c < 1.5) return vec3(1.0, 0.69, 0.29);       // central brain
+      if (c < 2.5) return vec3(0.75, 1.0, 0.45);       // sensory
+      if (c < 3.5) return vec3(0.55, 1.0, 0.48);       // visual projection (LC, LPLC...)
+      if (c > 4.5 && c < 5.5) return vec3(1.0, 0.31, 0.66);  // descending
+      return vec3(0.85, 0.75, 1.0);
+    }
+    void main() {
+      int id = gl_VertexID;
+      float h = texelFetch(heat, ivec2(id % texW, id / texW), 0).r;
+      float cy = cos(yaw), sy = sin(yaw), cp = cos(pitch), sp = sin(pitch);
+      vec3 p = vec3(pos.x * cy + pos.z * sy, pos.y, -pos.x * sy + pos.z * cy);
+      p = vec3(p.x, p.y * cp - p.z * sp, p.y * sp + p.z * cp);
+      float persp = 1.0 / (1.0 + p.z * 0.0009);
+      gl_Position = vec4(p.x * scale * persp / aspect, p.y * scale * persp, 0.0, 1.0);
+      vHeat = clamp(h, 0.0, 1.6);
+      vColor = classColor(cls);
+      gl_PointSize = (baseSize + 9.0 * sqrt(min(vHeat, 1.6))) * dpr * persp;
+    }`;
+  const FS_POINTS = `#version 300 es
+    precision highp float;
+    in vec3 vColor; in float vHeat; out vec4 o;
+    void main() {
+      vec2 d = gl_PointCoord - 0.5; float r = length(d) * 2.0;
+      if (r > 1.0) discard;
+      float core = smoothstep(1.0, 0.0, r);
+      vec3 rest = vec3(0.30, 0.40, 0.55);
+      float a = 0.055 + vHeat * core * core * 0.95;
+      vec3 c = mix(rest, vColor, min(1.0, vHeat * 1.5)) + vec3(1.0) * max(0.0, vHeat - 0.8) * core;
+      o = vec4(c, a);
+    }`;
+  const VS_EDGES = `#version 300 es
+    precision highp float;
+    in vec3 pos; in float nid; in float sgn;
+    uniform sampler2D heat; uniform int texW;
+    uniform float yaw, pitch, scale, aspect;
+    out float vHeat; out float vSign;
+    void main() {
+      int id = int(nid);
+      float h = texelFetch(heat, ivec2(id % texW, id / texW), 0).r;
+      float cy = cos(yaw), sy = sin(yaw), cp = cos(pitch), sp = sin(pitch);
+      vec3 p = vec3(pos.x * cy + pos.z * sy, pos.y, -pos.x * sy + pos.z * cy);
+      p = vec3(p.x, p.y * cp - p.z * sp, p.y * sp + p.z * cp);
+      float persp = 1.0 / (1.0 + p.z * 0.0009);
+      gl_Position = vec4(p.x * scale * persp / aspect, p.y * scale * persp, 0.0, 1.0);
+      vHeat = clamp(h, 0.0, 1.2); vSign = sgn;
+    }`;
+  const FS_EDGES = `#version 300 es
+    precision highp float;
+    in float vHeat; in float vSign; out vec4 o;
+    void main() {
+      vec3 exc = vec3(1.0, 0.78, 0.45), inh = vec3(0.45, 0.65, 1.0);
+      o = vec4(vSign > 0.0 ? exc : inh, 0.007 + vHeat * 0.16);
+    }`;
+
+  function program(vs, fs) {
+    const p = gl.createProgram();
+    for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
+      const s = gl.createShader(type);
+      gl.shaderSource(s, src); gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+      gl.attachShader(p, s);
+    }
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    return p;
+  }
+  const progP = program(VS_POINTS, FS_POINTS), progE = program(VS_EDGES, FS_EDGES);
+
+  function b64(s, Type) {
+    const bin = atob(s), u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return new Type(u8.buffer);
+  }
+
+  let N = 0, texW = 1024, texH = 1, heat = null, heatTex = null, vaoP = null, vaoE = null, nEdgeVerts = 0;
+  let groups = {}, xyz = null, dnIdx = [], dnCells = [];
+  const view = { yaw: 0, pitch: 0.12, rotate: params.get("rotate") !== "0", edges: params.get("edges") !== "0", t: 0 };
+
+  function buffer(data, loc, size) {
+    const b = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, b);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+  }
+
+  function setup(L) {
+    N = L.n; xyz = b64(L.xyz, Float32Array);
+    const cls = b64(L.cls, Uint8Array), edges = b64(L.edges, Uint32Array), ew = b64(L.edge_w, Float32Array);
+    groups = L.groups;
+    texH = Math.ceil(N / texW);
+    heat = new Float32Array(texW * texH);
+    heatTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, heatTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, texW, texH, 0, gl.RED, gl.FLOAT, heat);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+    vaoP = gl.createVertexArray(); gl.bindVertexArray(vaoP);
+    buffer(xyz, gl.getAttribLocation(progP, "pos"), 3);
+    buffer(Float32Array.from(cls), gl.getAttribLocation(progP, "cls"), 1);
+
+    const ne = edges.length / 2;
+    const ep = new Float32Array(ne * 6), en = new Float32Array(ne * 2), es = new Float32Array(ne * 2);
+    for (let k = 0; k < ne; k++) {
+      const a = edges[2 * k], b = edges[2 * k + 1];
+      ep.set(xyz.subarray(3 * a, 3 * a + 3), 6 * k); ep.set(xyz.subarray(3 * b, 3 * b + 3), 6 * k + 3);
+      en[2 * k] = a; en[2 * k + 1] = a;     // both ends glow with the presynaptic neuron
+      es[2 * k] = es[2 * k + 1] = ew[k] > 0 ? 1 : -1;
+    }
+    nEdgeVerts = ne * 2;
+    vaoE = gl.createVertexArray(); gl.bindVertexArray(vaoE);
+    buffer(ep, gl.getAttribLocation(progE, "pos"), 3);
+    buffer(en, gl.getAttribLocation(progE, "nid"), 1);
+    buffer(es, gl.getAttribLocation(progE, "sgn"), 1);
+    gl.bindVertexArray(null);
+
+    dnIdx = groups.readout_dns || [];
+    const dns = document.getElementById("dns");
+    dns.innerHTML = "";
+    dnCells = dnIdx.map(() => { const i = document.createElement("i"); dns.appendChild(i); return i; });
+  }
+
+  // ---- frames ----
+  const TAU = 0.28;            // s: how long a spike's glow lasts
+  let last = { t: 0, n_active: 0 }, spsHist = [], phaseTimer = null;
+  const dnHeat = new Float32Array(200);
+
+  function onFrame(f) {
+    last = f;
+    const phaseEl = document.getElementById("phase");
+    if (f.phase === "end") {
+      const word = { win: "Moon Lord defeated", loss: "The fly fell", timeout: "Time up", despawn: "Moon Lord left" }[f.outcome] || f.outcome;
+      phaseEl.className = "hud show end";
+      phaseEl.innerHTML = `${word}<small>${f.t ? f.t.toFixed(0) + " s" : ""}${f.hits != null ? " &middot; " + f.hits + " hits taken" : ""}</small>`;
+      return;
+    }
+    if (f.phase && f.phase.startsWith("nurse")) {
+      phaseEl.className = "hud show";
+      phaseEl.innerHTML = "Nurse trip<small>scripted heal &middot; brain idle</small>";
+    } else if (!phaseEl.classList.contains("end")) {
+      phaseEl.className = "hud";
+    }
+    if (f.spk && heat) {
+      const idx = b64(f.spk, Uint32Array), cnt = b64(f.cnt, Uint8Array);
+      for (let k = 0; k < idx.length; k++) heat[idx[k]] = Math.min(2.0, heat[idx[k]] + 0.55 + 0.25 * cnt[k]);
+      let spikes = 0; for (let k = 0; k < cnt.length; k++) spikes += cnt[k];
+      spsHist.push(spikes * 10); if (spsHist.length > 5) spsHist.shift();
+      const pos = new Map(); for (let k = 0; k < idx.length; k++) pos.set(idx[k], cnt[k]);
+      dnIdx.forEach((d, j) => { dnHeat[j] = Math.min(1, dnHeat[j] * 0.5 + (pos.get(d) || 0) / 6); });
+    }
+    document.getElementById("t").textContent = (f.t || 0).toFixed(1) + " s";
+    document.getElementById("active").textContent = (f.n_active || 0).toLocaleString();
+    document.getElementById("sps").textContent = Math.round(spsHist.reduce((a, b) => a + b, 0) / Math.max(1, spsHist.length)).toLocaleString();
+    if (f.max_hp) document.querySelector("#hp i").style.width = (100 * f.hp / f.max_hp) + "%";
+    if (f.boss != null) document.querySelector("#boss i").style.width = (100 * f.boss) + "%";
+    for (const k in senseBars) senseBars[k].style.width = Math.min(100, ((f.senses || {})[k] || 0) / 1.5) + "%";
+    const keys = f.keys || {};
+    document.querySelectorAll("#keys div").forEach(el => {
+      const who = keys[el.dataset.k];
+      el.className = who ? ("on" + (who === "brain" ? "" : " script")) : "";
+    });
+    dnCells.forEach((c, j) => {
+      const h = dnHeat[j];
+      c.style.background = h > 0.02 ? `rgba(255,79,168,${0.25 + 0.75 * h})` : "";
+    });
+    if (f.drive) {
+      const dx = Math.tanh(f.drive[0] / 2.5), dy = Math.tanh(f.drive[1] / 2.5);
+      const dot = document.getElementById("dot");
+      dot.style.left = (50 + 44 * dx) + "%"; dot.style.top = (50 - 44 * dy) + "%";
+    }
+  }
+
+  function connect() {
+    const src = new EventSource("stream");
+    const conn = document.getElementById("conn");
+    src.onopen = () => { conn.textContent = ""; };
+    src.onmessage = (e) => onFrame(JSON.parse(e.data));
+    src.onerror = () => { conn.textContent = "waiting for the fly…"; };
+  }
+
+  // ---- render loop ----
+  let prevT = performance.now();
+  function resize() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    for (const c of [canvas, tagCanvas]) { c.width = innerWidth * dpr; c.height = innerHeight * dpr; }
+    gl.viewport(0, 0, canvas.width, canvas.height);
+  }
+  addEventListener("resize", resize); resize();
+
+  function project(x, y, z) {
+    const cy = Math.cos(view.yaw), sy = Math.sin(view.yaw), cp = Math.cos(view.pitch), sp = Math.sin(view.pitch);
+    let px = x * cy + z * sy, py = y, pz = -x * sy + z * cy;
+    const qy = py * cp - pz * sp, qz = py * sp + pz * cp;
+    const persp = 1 / (1 + qz * 0.0009), aspect = canvas.width / canvas.height, s = scale();
+    return [(px * s * persp / aspect + 1) / 2 * tagCanvas.width, (1 - qy * s * persp) / 2 * tagCanvas.height];
+  }
+  function scale() { const aspect = canvas.width / canvas.height; return Math.min(1.75 / 900 * aspect, 1.5 / 430); }
+
+  const centroids = {};
+  function centroid(name) {
+    if (centroids[name] || !groups[name] || !groups[name].length) return centroids[name];
+    let x = 0, y = 0, z = 0; for (const i of groups[name]) { x += xyz[3 * i]; y += xyz[3 * i + 1]; z += xyz[3 * i + 2]; }
+    const n = groups[name].length; return (centroids[name] = [x / n, y / n, z / n]);
+  }
+
+  function draw(now) {
+    const dt = Math.min(0.1, (now - prevT) / 1000); prevT = now;
+    if (view.rotate && !dragging) { view.t += dt; view.yaw = 0.55 * Math.sin(view.t * 0.12); }
+    if (heat) {
+      const k = Math.exp(-dt / TAU);
+      for (let i = 0; i < N; i++) if (heat[i] > 0.002) heat[i] *= k; else heat[i] = 0;
+      gl.bindTexture(gl.TEXTURE_2D, heatTex);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, texW, texH, gl.RED, gl.FLOAT, heat);
+    }
+    const bg = document.body.classList.contains("transparent") ? [0, 0, 0, 0] : [0.016, 0.024, 0.04, 1];
+    gl.clearColor(...bg); gl.clear(gl.COLOR_BUFFER_BIT);
+    if (N) {
+      gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      const aspect = canvas.width / canvas.height, dpr = canvas.width / innerWidth;
+      for (const [prog, vao] of (view.edges ? [[progE, vaoE], [progP, vaoP]] : [[progP, vaoP]])) {
+        gl.useProgram(prog);
+        gl.uniform1i(gl.getUniformLocation(prog, "heat"), 0);
+        gl.uniform1i(gl.getUniformLocation(prog, "texW"), texW);
+        gl.uniform1f(gl.getUniformLocation(prog, "yaw"), view.yaw);
+        gl.uniform1f(gl.getUniformLocation(prog, "pitch"), view.pitch);
+        gl.uniform1f(gl.getUniformLocation(prog, "scale"), scale());
+        gl.uniform1f(gl.getUniformLocation(prog, "aspect"), aspect);
+        if (prog === progP) { gl.uniform1f(gl.getUniformLocation(prog, "dpr"), dpr); gl.uniform1f(gl.getUniformLocation(prog, "baseSize"), 1.6); }
+        gl.bindVertexArray(vao);
+        if (prog === progE) gl.drawArrays(gl.LINES, 0, nEdgeVerts); else gl.drawArrays(gl.POINTS, 0, N);
+      }
+    }
+    drawTags();
+    requestAnimationFrame(draw);
+  }
+
+  function drawTags() {
+    tg.clearRect(0, 0, tagCanvas.width, tagCanvas.height);
+    if (!N) return;
+    const dpr = tagCanvas.width / innerWidth;
+    tg.font = `${11 * dpr}px "IBM Plex Mono", monospace`;
+    tg.textAlign = "center";
+    // static region labels
+    tg.fillStyle = "rgba(108,122,140,0.75)";
+    for (const [label, x, y, z] of [["left optic lobe", -330, 165, 0], ["right optic lobe", 330, 165, 0], ["central brain", 0, 205, 0]]) {
+      const [sx, sy] = project(x, y, z); tg.fillText(label, sx, sy);
+    }
+    // live tags on the visual populations being driven
+    const s = last.senses || {};
+    for (const k in s) {
+      if (s[k] < 20) continue;
+      const c = centroid(k); if (!c) continue;
+      const [sx, sy] = project(...c);
+      const a = Math.min(1, s[k] / 120);
+      tg.fillStyle = `rgba(141,255,122,${0.35 + 0.65 * a})`;
+      tg.beginPath(); tg.arc(sx, sy, 3 * dpr, 0, 6.283); tg.fill();
+      tg.fillText(k.split("_")[0], sx, sy - 8 * dpr);
+    }
+  }
+
+  // ---- interaction ----
+  let dragging = false, lastX = 0, lastY = 0;
+  addEventListener("pointerdown", e => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
+  addEventListener("pointerup", () => { dragging = false; });
+  addEventListener("pointermove", e => {
+    if (!dragging) return;
+    view.yaw += (e.clientX - lastX) * 0.006; view.pitch = Math.max(-1.2, Math.min(1.2, view.pitch + (e.clientY - lastY) * 0.006));
+    view.t = Math.asin(Math.max(-1, Math.min(1, view.yaw / 0.55))) / 0.12;
+    lastX = e.clientX; lastY = e.clientY;
+  });
+  addEventListener("keydown", e => {
+    const k = e.key.toLowerCase();
+    if (k === "h") document.body.classList.toggle("hidden");
+    if (k === "r") view.rotate = !view.rotate;
+    if (k === "e") view.edges = !view.edges;
+  });
+
+  fetch("layout").then(r => r.json()).then(L => { setup(L); connect(); })
+    .catch(err => { document.getElementById("conn").textContent = "could not load the brain layout: " + err; });
+  requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>

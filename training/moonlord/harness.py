@@ -445,7 +445,9 @@ def nurse_step(bridge, st, cfg, ns, log):
     return None
 
 
-def run_episode(bridge, policy, cfg, episode_seed, log_file=None):
+def run_episode(bridge, policy, cfg, episode_seed, log_file=None, observer=None):
+    """One fight. observer (optional, viz.brain_stream.BrainObserver) gets
+    every tick (observer.tick) and the outcome (observer.end)."""
     simulated = getattr(bridge, "simulated", False)
     clock = Clock(simulated)
     mode = cfg["mode"]
@@ -492,6 +494,9 @@ def run_episode(bridge, policy, cfg, episode_seed, log_file=None):
         _ok(bridge.request({"cmd": "select_slot", "slot": cfg["whip_slot"]}), "select whip slot")
     human = getattr(policy, "passthrough", False)
     _ok(bridge.request({"cmd": "set_passthrough", "enabled": human}), "set_passthrough")
+    if cfg.get("wait_enter") and not getattr(bridge, "simulated", False):
+        bridge.request({"cmd": "set_action", **RELEASE})
+        input("  Ready. Start your recording, then press Enter to summon the Moon Lord... ")
     if cfg.get("countdown_s"):
         for n in range(int(cfg["countdown_s"]), 0, -1):
             print(f"  {'boss' if mode == 'fight' else 'recording'} in {n}...", flush=True)
@@ -541,6 +546,9 @@ def run_episode(bridge, policy, cfg, episode_seed, log_file=None):
                 nurse_trips += done
                 log({"phase": "play", "tick": tick, "elapsed_s": elapsed, "action": nstate.get("last_action"),
                      "sources": {"nurse": "assist"}, "state": _trim_state(st), "nurse": nstate.get("phase")})
+                if observer:
+                    observer.tick(policy, st, elapsed, nstate.get("last_action"), {}, brain_stepped=False,
+                                  phase=f"nurse: {nstate.get('phase')}")
                 tick += 1
                 clock.end_tick()
                 continue
@@ -573,8 +581,9 @@ def run_episode(bridge, policy, cfg, episode_seed, log_file=None):
             ledger[w] = ledger.get(w, 0) + 1
         log({"phase": "play", "tick": tick, "elapsed_s": elapsed, "action": action, "sources": sources,
              "state": _trim_state(st),
-             "drives": getattr(policy, "last_drives", None),
-             "vertical": getattr(policy, "last_vertical", None), "dn": getattr(policy, "last_dn", None)})
+             "drive": getattr(policy, "last_drive", None)})
+        if observer:
+            observer.tick(policy, st, elapsed, action, sources)
         tick += 1
         clock.end_tick()
 
@@ -749,9 +758,13 @@ def main(argv=None):
     ap.add_argument("--fake-master", action="store_true", help="with --fake: the Master-mode offline fight")
     ap.add_argument("--countdown", type=float, default=None,
                     help="seconds to wait (counting down) before each boss spawns, e.g. to start a recording")
+    ap.add_argument("--wait-enter", action="store_true",
+                    help="wait for Enter before each boss spawns (after the minions are summoned)")
     ap.add_argument("--brain-viz", action="store_true",
                     help="fly: serve the live brain viewer (viz/brain_viewer.html) at http://localhost:<--viz-port>")
     ap.add_argument("--viz-port", type=int, default=8765)
+    ap.add_argument("--hold-viewer", action="store_true",
+                    help="with --brain-viz: keep the viewer up after the last fight until you press Enter")
     ap.add_argument("--record-brain", action="store_true",
                     help="fly: save every brain slice to logs/moonlord/<run>_brain.jsonl.gz (replay with viz/replay.py)")
     ap.add_argument("--dodger-ring", default=None, help="scripted: min,max px from the core to circle at (default 450,900)")
@@ -883,6 +896,7 @@ def main(argv=None):
         cfg["countdown_s"] = 3  # time to put your hands on the keyboard
     if args.countdown is not None:
         cfg["countdown_s"] = args.countdown
+    cfg["wait_enter"] = args.wait_enter
     if args.keep_focus:
         _ok(bridge.request({"cmd": "set_keep_focus", "enabled": True}), "set_keep_focus")
 
@@ -919,16 +933,32 @@ def main(argv=None):
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     rows = []
+    server, observer = None, None
+    if (args.brain_viz or args.record_brain) and args.policy != "fly":
+        print("--brain-viz / --record-brain need --policy fly; ignoring them")
+    elif args.brain_viz or args.record_brain:
+        sys.path.insert(0, str(ROOT))
+        from viz import brain_layout, brain_stream
+        if args.brain_viz:
+            print("Laying out the brain for the viewer...", flush=True)
+            server = brain_stream.BrainServer(brain_layout.to_json(brain_layout.from_brain(policy.brain)),
+                                              port=args.viz_port)
+            print(f"Brain viewer: open {server.url} in a browser", flush=True)
+        rec = LOG_DIR / f"{stamp}_brain.jsonl.gz" if args.record_brain else None
+        observer = brain_stream.BrainObserver(server, rec, meta={"params": params_file.name, "run": stamp,
+                                                                 "null": args.fly_null})
     try:
         for i in range(args.episodes):
             seed = args.seed + i
             log_path = LOG_DIR / f"{stamp}_{args.policy}_{args.mode}_ep{i:03d}.jsonl"
             if args.no_log:
-                row = run_episode(bridge, policy, cfg, seed)
+                row = run_episode(bridge, policy, cfg, seed, observer=observer)
             else:
                 with open(log_path, "w") as f:
-                    row = run_episode(bridge, policy, cfg, seed, f)
+                    row = run_episode(bridge, policy, cfg, seed, f, observer=observer)
                 row["log"] = str(log_path.relative_to(ROOT))
+            if observer:
+                observer.end(row["outcome"], row)
             row["run"] = stamp
             row["whip_strategy"] = cfg["whip_strategy"]
             row["nurse"] = bool(cfg.get("nurse"))
@@ -955,7 +985,16 @@ def main(argv=None):
         except Exception:
             pass
         bridge.close()
+        if observer:
+            observer.close()
+            if observer.record_path:
+                print(f"brain recording: {Path(observer.record_path).relative_to(ROOT)}")
     print(summarize(rows))
+    if server and args.hold_viewer:
+        try:
+            input("Fight over. The brain viewer stays up -- press Enter to close it. ")
+        except (EOFError, KeyboardInterrupt):
+            pass
     return rows
 
 

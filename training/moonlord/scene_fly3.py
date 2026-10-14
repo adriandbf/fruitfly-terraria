@@ -61,6 +61,7 @@ class SceneFly3Policy(scene3.V3Policy):
         self.dn_ids = readout.get("dn_ids") or [d["id"] for d in SCENE["readout_dns_v3"]]
         self.last_spikes = None   # every neuron's rate (Hz) in the last 100 ms slice
         self.last_senses = {}     # {(population, side): Hz} driven in that slice
+        self.last_drive = None    # (sideways, vertical) readout output
 
     def _ensure_brain(self):
         if self.brain is None:
@@ -80,7 +81,8 @@ class SceneFly3Policy(scene3.V3Policy):
 
     def drives(self, state):
         f = np.concatenate([self.brain_step(state) / 100.0, [1.0]])
-        return float(f @ np.asarray(self.readout["wh"])), float(f @ np.asarray(self.readout["wv"]))
+        self.last_drive = (float(f @ np.asarray(self.readout["wh"])), float(f @ np.asarray(self.readout["wv"])))
+        return self.last_drive
 
     def act(self, state):
         a, src = super().act(state)

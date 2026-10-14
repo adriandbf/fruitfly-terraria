@@ -73,6 +73,21 @@ far_beam = scene3.scene_rates_v3({**base, "projectiles": [{"type": 455, "cx": 0.
 check("v3.1: a sweeping deathray 0.4 rad away already drives LC22 on its side",
       far_beam[("LC22", 1)] > 0 and far_beam[("LC22", -1)] == 0, f"{far_beam[('LC22', 1)]:.0f} Hz")
 
+# 6. Brain viewer frames: spiking neurons and their counts survive the encoding.
+import base64  # noqa: E402
+sys.path.insert(0, str(ROOT))
+from viz.brain_stream import encode_frame  # noqa: E402
+rates = np.zeros(1000)
+rates[[3, 500, 999]] = [10.0, 30.0, 200.0]   # Hz over a 100 ms slice -> 1, 3, 20 spikes
+fr = encode_frame(rates, 12.345, {("LC11", 1): 80.0, ("LC4", -1): 0.0}, (0.5, -1.0), {"left": "brain"},
+                  {"player": {"hp": 300, "max_hp": 600}, "npcs": []})
+idx = np.frombuffer(base64.b64decode(fr["spk"]), np.uint32)
+cnt = np.frombuffer(base64.b64decode(fr["cnt"]), np.uint8)
+check("viewer frame: spiking neurons, counts, senses", list(idx) == [3, 500, 999] and list(cnt) == [1, 3, 20]
+      and fr["senses"] == {"LC11_right": 80.0} and fr["t"] == 12.35 and fr["hp"] == 300, str(fr)[:120])
+check("viewer frame without a brain step (Nurse trip) has no spikes",
+      "spk" not in encode_frame(None, 1.0, phase="nurse: talk"))
+
 print()
 print("ALL PASS" if not FAILS else f"{len(FAILS)} FAILED: {FAILS}")
 sys.exit(1 if FAILS else 0)
