@@ -1,4 +1,4 @@
-"""Character movement model, fitted to probe_movement.py on the real game
+"""Character movement model, fitted to movement probes on the real game
 (Hallowed summoner, Empress Wings + Soaring Insignia, full game speed).
 Shared by fake_bridge.py, the scripted dodger and the leash. Per game tick
 (60/s), pixels. Probe v3 (2026-10-09, every test from the ground) is the

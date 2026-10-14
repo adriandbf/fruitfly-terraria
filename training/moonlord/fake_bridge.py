@@ -1,18 +1,19 @@
-"""Offline stand-in for the FruitFlyBridge mod's Goal 2 (Moon Lord) API.
+"""Offline stand-in for the FruitFlyBridge mod's Moon Lord API.
 
 Speaks the same request/response protocol as the real mod (get_state,
 set_action, reset_episode, spawn_npc, spawn_projectile, select_slot,
 set_arena, set_keep_focus, get_episode) so harness.py and every policy run
 unchanged against either. Two uses:
   1. Testing the harness and policies without the game.
-  2. The start of the offline dodge gym (stage M2): tuning needs hundreds of
-     episodes, far too slow against the live game.
+  2. Training: teacher search and readout fitting need hundreds of fights,
+     far too slow against the live game.
 
 It is a CARTOON of the fight, not a model of it. Every number below
 (speeds, damage, attack timing, boss HP, minion DPS) is an assumption in
 Terraria's own units (pixels, 60 ticks/s), chosen to be roughly the right
-order of magnitude. Calibrate against logged live fights before trusting
-any result from it. Not modelled: phases, the hands' and head's separate
+order of magnitude. It has since been fitted to logged live fights
+(fake_fit.json for Expert, fake_fit_master.json via fit_master.py for Master),
+but always re-check a result live. Not modelled: phases, the hands' and head's separate
 HP and vulnerability, leeches, platforms, knockback, defense, debuffs,
 buffs, and real minion targeting.
 
@@ -101,7 +102,7 @@ DEFAULT_CONFIG = {
     "bolt_period": 330, "bolt_damage": 90, "bolt_speed": 8.0, "bolt_count": 3,
     "sphere_period": 280, "sphere_damage": 140, "sphere_speed": 10.0, "sphere_count": 6,
     "eye_period": 190, "eye_damage": 85, "eye_speed": 9.0, "eye_turn": 0.03, "eye_life": 240,
-    # v2 aim model (fitted to live hit rates by calibrate_fake.py / fit_fake.py)
+    # v2 aim model (fitted to live Expert hit rates; the fitter is in git history, tag archive/pre-cleanup)
     "bolt_lead": 0.0, "bolt_spread": 0.12, "bolt_life": 600,
     "sphere_lead": 0.0, "sphere_spread": 0.35, "sphere_life": 600,
     # Moon Leech (tongue), v3 2026-10-09 from 70+ live fights: catch -> pulled toward the core
@@ -113,7 +114,7 @@ DEFAULT_CONFIG = {
     "boss_attacks": True,
 }
 
-# Attack knobs fitted to live fights by fit_fake.py, if present (overrides
+# Expert attack knobs fitted to live fights (fake_fit.json), if present (overrides
 # the defaults above; explicit config still wins).
 _FIT_PATH = Path(__file__).resolve().parent / "fake_fit.json"
 FITTED = json.loads(_FIT_PATH.read_text())["config"] if _FIT_PATH.exists() else {}
@@ -157,6 +158,30 @@ class _Proj:
         self.damage, self.life, self.homing = damage, life, homing
         self.angle = self.omega = 0.0
 
+# Domain randomization: every training fight gets its own boss, each of these
+# scaled by U(1-r, 1+r) (seeded by the fight seed, so it's the same boss for
+# every candidate). Stops training from leaning on one exact fake detail
+# (2026-10-09: an early search parked the fly beside the fake's motionless hand).
+RANDOMIZE_KEYS = ["boss_drift", "hand_speed", "hand_in", "hand_out", "eye_turn", "eye_speed", "eye_period",
+                  "bolt_speed", "bolt_period", "bolt_lead", "sphere_speed", "sphere_period", "contact_radius",
+                  "dps_near", "regen_per_s"]
+
+
+def randomized(fake_cfg, seed, r):
+    """fake_cfg with RANDOMIZE_KEYS jittered by +-r around the profile the fake
+    will actually use (Expert, or Master when difficulty == "master")."""
+    if not r:
+        return fake_cfg
+    master = {**MASTER, **MASTER_FIT} if fake_cfg.get("difficulty") == "master" else {}
+    base = {**DEFAULT_CONFIG, **FITTED, **master, **fake_cfg}
+    rng = random.Random(seed * 7919 + 13)
+    out = dict(fake_cfg)
+    for k in RANDOMIZE_KEYS:
+        v = base[k] * rng.uniform(1 - r, 1 + r)
+        out[k] = int(round(v)) if isinstance(base[k], int) else v
+    out["hand_in"] = min(out["hand_in"], out["hand_out"] - 50)
+    return out
+
 
 class FakeMoonLordBridge:
     simulated = True
@@ -188,7 +213,7 @@ class FakeMoonLordBridge:
         self._summon_hold = 0
         self.px, self.py = self.spawn_x, self.floor - c["player_h"]  # top-left
         # Marked arena = the spawn point, like a live world after --build-arena
-        # (so the leash and FlyPolicy's looming surfaces see the same box offline).
+        # (so the leash and the fly's looming surfaces see the same box offline).
         self.arena = (self.px, self.py) if c.get("mark_arena", True) else None
         self.vx = self.vy = 0.0
         self.hp, self.dead, self.dead_ticks = c["player_hp"], False, 0
@@ -206,9 +231,6 @@ class FakeMoonLordBridge:
         if fn is None:
             return {"ok": False, "error": f"unknown cmd '{cmd}'"}
         return fn(payload)
-
-    def release(self):
-        self.action = {}
 
     def close(self):
         pass

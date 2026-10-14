@@ -20,7 +20,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-for p in (HERE, ROOT / "brain", ROOT / "interface"):
+for p in (HERE, ROOT / "brain"):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
@@ -59,19 +59,19 @@ class SceneFly3Policy(scene3.V3Policy):
         self.brain = brain
         self.pops = populations()
         self.dn_ids = readout.get("dn_ids") or [d["id"] for d in SCENE["readout_dns_v3"]]
-        self.last_spikes = None
+        self.last_spikes = None   # every neuron's rate (Hz) in the last 100 ms slice
+        self.last_senses = {}     # {(population, side): Hz} driven in that slice
 
     def _ensure_brain(self):
         if self.brain is None:
-            sys.path.insert(0, str(ROOT / "brain" / "Drosophila_brain_model"))
-            import run_fly  # noqa: E402  (Mac: numba FastBrain)
-            self.brain = run_fly.build_brain()
-            self.brain.stimulate([], [], duration_ms=10)
+            from brain_backend import make_brain
+            self.brain, _ = make_brain("fast")   # numba FastBrain, the live engine
 
     def brain_step(self, state):
         self._ensure_brain()
         ids, rates = [], []
-        for k, r in scene3.scene_rates_v3(state, self.arena).items():
+        self.last_senses = scene3.scene_rates_v3(state, self.arena)
+        for k, r in self.last_senses.items():
             if r > 0:
                 ids += list(self.pops[k])
                 rates += [r] * len(self.pops[k])
@@ -100,7 +100,7 @@ def _set_opts(opts):
 
 def _fake(seed, randomize):
     from fake_bridge import FakeMoonLordBridge
-    from train_fly_cma import randomized
+    from fake_bridge import randomized
     cfg = {"seed": seed, **randomized({"difficulty": "master"} if _OPTS.get("master") else {}, seed, randomize)}
     return FakeMoonLordBridge(cfg)
 
@@ -116,7 +116,7 @@ def _collect_job(job):
     import harness
     from brain_backend import make_brain
     from fake_bridge import FakeMoonLordBridge
-    from train_fly_cma import randomized
+    from fake_bridge import randomized
     brain, _ = make_brain(engine, null, seed=0)
     teacher = _teacher()
     _record.fly = SceneFly3Policy({"wh": [], "wv": [], "thr": 0, "hold": 0, "override": 0}, brain=brain)
@@ -221,7 +221,7 @@ def _eval_job(job):
     import harness
     from brain_backend import make_brain
     from fake_bridge import FakeMoonLordBridge
-    from train_fly_cma import randomized
+    from fake_bridge import randomized
     brain, _ = make_brain(engine, null, seed=0)
     ro = json.loads(Path(params_path).read_text())["readout"]
     lo = json.loads((HERE / "loadout.json").read_text())

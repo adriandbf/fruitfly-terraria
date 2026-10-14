@@ -1,7 +1,7 @@
 """CMA-ES for the v3-senses teacher (scene3.V3Policy) on the fake fight, with
 per-fight boss randomization. The teacher sees exactly the fly's v3 senses
 (no positions, no paths) -- its moves are what those senses make possible;
-the fly's brain then learns to reproduce them (scene_fly.py, v3 mode).
+the fly's brain then learns to reproduce them (scene_fly3.py).
 
   python training/moonlord/train_senses3.py --generations 40
 """
@@ -16,7 +16,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-for p in (HERE, ROOT / "brain", ROOT / "interface"):
+for p in (HERE, ROOT / "brain"):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 import scene3  # noqa: E402
@@ -40,7 +40,7 @@ def _init(randomize, penalty=0.5, objective="boss", eye_weight=1.0, master=False
 # Where live data says the fake is trustworthy (exposure in 120+ live fights):
 # under 1100 px from the core and more than 15 tiles above the arena floor (the start counts). Teachers
 # trained without this fled 2000 px away or hugged the floor -- both looked
-# great offline and failed live (sectors_v4: 121 s offline, 32 s live).
+# great offline and failed live (an earlier policy: 121 s offline, 32 s live).
 ENVELOPE = {"dist": (0.0, 1100.0), "height_tiles": (15.0, 250.0)}
 
 
@@ -64,7 +64,7 @@ def _episode(job):
     w, seed = job
     import harness
     from fake_bridge import FakeMoonLordBridge
-    from train_fly_cma import randomized
+    from fake_bridge import randomized
     pol = _Track(w, _W["arena"])
     pol.n = pol.out = pol.far = 0
     fake = {"seed": seed, **randomized({"difficulty": "master"} if _W["master"] else {}, seed, _W["randomize"])}

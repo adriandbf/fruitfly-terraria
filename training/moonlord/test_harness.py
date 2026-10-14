@@ -1,7 +1,6 @@
-"""Offline checks for the Moon Lord harness (Goal 2, stage M0). No game,
-no brain: runs the harness against fake_bridge.py, and FlyPolicy with a
-stub brain. Run: python training/moonlord/test_harness.py"""
-import math
+"""Offline checks for the Moon Lord harness. No game, no brain: runs the
+harness against fake_bridge.py, and the fly's policy with a stub brain.
+Run: python training/moonlord/test_harness.py"""
 import re
 import sys
 from pathlib import Path
@@ -94,17 +93,11 @@ r2 = harness.run_episode(b, policies.IdlePolicy(), cfg(), 4)
 check("episode after a death starts clean", r1["outcome"] == "loss" and r2["seconds"] > 1 and r2["hits"] > 0,
       f"{r1['outcome']} then {r2['outcome']} {r2['seconds']}s")
 
-# 7. Gym mode: volleys arrive, idle takes damage, the dodger takes less.
-gconf = cfg(mode="gym")
-gi = episodes(policies.IdlePolicy(), 6, gconf, {"boss_attacks": False})
-gs_ = episodes(policies.ScriptedDodger(), 6, gconf, {"boss_attacks": False})
-mean = lambda rows: sum(r["damage_taken"] for r in rows) / len(rows)
-check("gym fires projectiles that hit an idle player", mean(gi) > 0, f"{mean(gi):.0f} dmg")
-check("scripted takes less gym damage than idle", mean(gs_) < mean(gi), f"{mean(gs_):.0f} vs {mean(gi):.0f}")
-
-# 8. FlyPolicy plumbing with a stub brain (no connectome needed).
+# 8. The fly (SceneFly3Policy) with a stub brain: senses reach the brain as
+#    visual-population input, the readout turns DN rates into keys credited
+#    "brain", and the last slice is kept for the brain viewer.
 sys.path.insert(0, str(HERE.parents[1] / "brain"))
-import neurons  # noqa: E402
+from scene_fly3 import SceneFly3Policy  # noqa: E402
 
 
 class StubBrain:
@@ -113,92 +106,32 @@ class StubBrain:
 
     def stimulate(self, ids, rates, duration_ms):
         self.calls.append((list(ids), list(rates)))
-        return None
+        return {int(i): r for i, r in zip(ids, rates)}
 
-    def reset_state(self):
+    def rate_for(self, rates, flyid):
+        return float(rates.get(int(flyid), 0.0))
+
+    def reset_state(self, seed=None):
         pass
 
 
 stub = StubBrain()
-# Giant Fiber firing + DNa02 lean: what a looming threat produces.
-fake_rates = {f: 0.0 for f in neurons.ALL_DESCENDING}
-for f in neurons.DNP01_JUMP:
-    fake_rates[f] = 120.0
-for f in neurons.DNA02_STEERING_LEFT:
-    fake_rates[f] = 80.0
-fly = policies.FlyPolicy(brain=stub, readout_fn=lambda _spikes: fake_rates, vertical="rule")
+n_dn = len(SceneFly3Policy({"wh": [], "wv": [], "thr": 0, "hold": 0, "override": 0}, brain=stub).dn_ids)
+# zero DN weights, bias only: always "right + climb"
+ro = {"wh": [0.0] * n_dn + [1.0], "wv": [0.0] * n_dn + [1.0], "thr": 0.1, "hold": 0, "override": 1.0}
+fly = SceneFly3Policy(ro, brain=stub)
 fly.reset()
-p = {"cx": 0.0, "cy": 0.0, "x": -10.0, "y": -21.0, "direction": 1, "dead": False}
-state = {"in_world": True, "player": p, "npcs": [], "players": [], "projectiles": [
-    {"type": 462, "cx": 300.0, "cy": 0.0, "vx": -10.0, "vy": 0.0, "width": 10, "height": 10, "damage": 50},  # incoming
-    {"type": 462, "cx": -300.0, "cy": 0.0, "vx": -10.0, "vy": 0.0, "width": 10, "height": 10, "damage": 50},  # leaving
-]}
-seen = fly.threats_as_npcs(state)
-check("only the incoming projectile is a threat", len(seen) == 1 and seen[0]["x"] == 300.0, str(seen))
+p = {"cx": 0.0, "cy": 0.0, "x": -10.0, "y": -21.0, "vx": 0.0, "vy": 0.0, "direction": 1, "dead": False}
+state = {"in_world": True, "player": p, "npcs": [], "players": [], "episode": {}, "projectiles": [
+    {"type": 462, "cx": 300.0, "cy": 0.0, "vx": -10.0, "vy": 0.0, "width": 10, "height": 10, "damage": 50}]}
 action, sources = fly.act(state)
-lc4 = set(neurons.LC4_LOOMING_LEFT) | set(neurons.LC4_LOOMING_RIGHT)
 ids, rates = stub.calls[-1]
-check("the threat drives LC4", any(i in lc4 and r > 0 for i, r in zip(ids, rates)))
-check("fleeing fly: direction from the brain, flight from the rule, no up/use",
-      sources.get("left") == "brain" and sources.get("jump") == "rule"
-      and not action["up"] and not action["use"], f"{action} {sources}")
-
-# 8b. Attention: an incoming bolt about to hit beats the closer but slow core.
-core_state = {"in_world": True, "player": dict(p), "players": [], "projectiles": [
-    {"type": 462, "cx": 200.0, "cy": 0.0, "vx": -10.0, "vy": 0.0, "width": 8, "height": 8, "damage": 70}],
-    "npcs": [{"type": 398, "x": -23.0, "y": 97.0, "cx": 0.0, "cy": 130.0, "vx": 0.0, "vy": 0.0,
-              "moon_lord_part": True, "hostile": True}]}
-urgent = fly.most_urgent(core_state)
-check("attention picks the bolt (20 ticks away) over the core", urgent and urgent.get("from_projectile") == 462, str(urgent))
-
-# 8c. Sawtooth: climbing fast switches to a dive; falling fast switches back.
-fly2 = policies.FlyPolicy(brain=StubBrain(), readout_fn=lambda _s: fake_rates, vertical="rule")
-fly2.reset()
-st_up = {**state, "player": {**p, "vy": -12.0}}
-a1, _ = fly2.act(st_up)
-st_down = {**state, "player": {**p, "vy": 7.0}}
-a2, _ = fly2.act(st_down)
-check("sawtooth: dive after a fast climb, climb after a fast fall",
-      a1["down"] and not a1["jump"] and a2["jump"] and not a2["down"], f"{a1} {a2}")
-fly3 = policies.FlyPolicy(brain=StubBrain(), readout_fn=lambda _s: fake_rates, fly_flee=False)
-fly3.reset()
-a3, s3 = fly3.act(state)
-check("fly_flee=False leaves the decoder's own action, all credited 'brain'",
-      all(v == "brain" for v in s3.values()) and not a3["down"], f"{a3} {s3}")
-
-# 8d. Vertical from the brain: landing (DNp07) beats the Giant Fiber -> dive away
-#     from the stronger DNp07 side; Giant Fiber alone -> climb. Threats split by height.
-land_rates = {f: 0.0 for f in neurons.ALL_DESCENDING}
-for f in neurons.DNP07_LANDING_LEFT:
-    land_rates[f] = 150.0
-for f in neurons.DNP01_JUMP:
-    land_rates[f] = 40.0
-flyb = policies.FlyPolicy(brain=StubBrain(), readout_fn=lambda _s: land_rates)
-flyb.reset()
-a, srcs = flyb.act(state)
-check("brain vertical: DNp07_L > Giant Fiber -> dive to the right",
-      a["down"] and a["right"] and not a["jump"] and set(srcs.values()) == {"brain"}, f"{a} {srcs}")
-flyc = policies.FlyPolicy(brain=StubBrain(), readout_fn=lambda _s: fake_rates)
-flyc.reset()
-a, srcs = flyc.act(state)
-check("brain vertical: Giant Fiber only -> climb (jump held), credited brain",
-      a["jump"] and not a["down"] and set(srcs.values()) == {"brain"}, f"{a} {srcs}")
-st_ab = {**state, "projectiles": [
-    {"type": 462, "cx": 0.0, "cy": -300.0, "vx": 0.0, "vy": 10.0, "width": 8, "height": 8, "damage": 70},
-    {"type": 462, "cx": 300.0, "cy": 0.0, "vx": -10.0, "vy": 0.0, "width": 8, "height": 8, "damage": 70}]}
-above, level = flyc.urgent_by_elevation(st_ab)
-check("threats split by height (above -> LPLC4, level -> LC4)",
-      above and above["y"] == -300.0 and level and level["y"] == 0.0, f"{above} {level}")
-lp_ids, lp_rates = flyc._lplc4_drive(st_ab, above)
-check("LPLC4 channel is driven for a threat from above",
-      set(lp_ids) <= set(neurons.LPLC4_LOOMING) and max(lp_rates) > 0, f"{len(lp_ids)} ids")
-
-# 8e. Direction commitment: a brief reversal is ignored, a sustained one is taken.
-flyk = policies.FlyPolicy(brain=StubBrain(), readout_fn=lambda _s: fake_rates, commit_ticks=4)
-flyk.reset()
-seq = [flyk._commit(w)["right"] for w in (1, -1, -1, 1, -1, -1, -1, -1, -1)]
-check("commitment: holds right through a 2-tick reversal, switches after 4",
-      seq[:4] == [True, True, True, True] and seq[-1] is False, str(seq))
+lc11 = set(fly.pops[("LC11", 1)])
+check("an incoming bolt on the right drives LC11 (right eye)", any(i in lc11 and r > 0 for i, r in zip(ids, rates)))
+check("readout bias -> right + climb, every key credited brain",
+      action["right"] and action["jump"] and set(sources.values()) == {"brain"}, f"{action} {sources}")
+check("the last slice and senses are kept (for the brain viewer)",
+      fly.last_spikes is not None and fly.last_senses.get(("LC11", 1), 0) > 0)
 
 # 9. Whip assist: swings at the boss with aim, credited "assist", and the
 #    fly/scripted policies are never credited for `use`.

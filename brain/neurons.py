@@ -54,7 +54,7 @@ this pass, to revisit once real neurons.
 
 UPDATE after the first live test (character took real damage, 100->77 HP,
 and never reacted at all -- confirmed offline first in
-interface/validate_v0_pipeline.py, then live): none of the four neurons
+the first-goal pipeline check, then live): none of the four neurons
 above ever actually fired from either sensory channel, sustained, at max
 drive (brain/find_reachable_motor_neurons.py, a diagnostic sweep
 cross-referencing every neuron that DOES light up against the real

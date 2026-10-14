@@ -12,7 +12,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-for p in (HERE, ROOT / "brain", ROOT / "interface"):
+for p in (HERE, ROOT / "brain"):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 import harness  # noqa: E402

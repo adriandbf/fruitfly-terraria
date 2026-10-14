@@ -1,5 +1,5 @@
-"""Goal 2 (Moon Lord) episode harness: runs fights (or dodge-gym drills)
-back to back with nobody at the keyboard, and scores each one.
+"""Moon Lord episode harness: runs fights back to back with nobody at the
+keyboard, and scores each one.
 
 One episode:
   1. wait until the player is alive (the game's own respawn after a death)
@@ -10,13 +10,12 @@ One episode:
      select each summon staff and hold `use` until the minion slots fill
      then select the whip slot (if the loadout has one)
   4. fight mode: spawn the Moon Lord and wait for it to appear
-     gym mode:   no boss; volleys of Moon Lord projectiles are fired at the
-                 player on a seeded schedule (stage M2's dodge gym)
+     free mode:  nothing spawns (movement demos)
   5. 10 Hz loop: get_state -> policy.act -> set_action, every tick logged.
      With the loadout's whip_assist on, a scripted assist holds `use` aimed
      at the nearest hittable Moon Lord part (credited "assist", not "brain")
   6. end on: boss killed (win), player dead (loss), boss gone without a
-     kill (despawn), or the time cap (timeout; in gym mode that's survival)
+     kill (despawn), or the time cap (timeout; in free mode that's survival)
 
 Each episode appends a summary line to logs/moonlord/results.jsonl
 (results_fake.jsonl for --fake runs), with
@@ -28,8 +27,7 @@ Usage (Mac, mod loaded, in a world with any fresh character):
   python training/moonlord/harness.py --build-arena           # once per world: platforms + arena mark
   python training/moonlord/harness.py --mark-arena            # re-mark after a game restart
   python training/moonlord/harness.py --policy idle --episodes 5
-  python training/moonlord/harness.py --policy fly --episodes 20 --keep-focus
-  python training/moonlord/harness.py --policy scripted --mode gym --episodes 50
+  python training/moonlord/harness.py --policy fly --nurse --episodes 10 --keep-focus
   python training/moonlord/harness.py --fake --policy scripted --episodes 10   # offline, no game
   python training/moonlord/harness.py --policy human                 # record YOU fighting (you steer)
   python training/moonlord/harness.py --policy human --mode free --max-seconds 60   # movement demo, no boss
@@ -37,8 +35,6 @@ Usage (Mac, mod loaded, in a world with any fresh character):
 import argparse
 import json
 import re
-import math
-import random
 import sys
 import time
 from datetime import datetime
@@ -56,12 +52,12 @@ TICK_HZ = 10
 TICK_S = 1.0 / TICK_HZ
 LOG_DIR = ROOT / "logs" / "moonlord"
 LOADOUT = HERE / "loadout.json"
+DEFAULT_FLY_PARAMS = HERE / "params" / "scene3_master_ray.json"   # the best live Master fly (9.8 hits/min)
 MOON_LORD_CORE = 398
-PHANTASMAL_BOLT, PHANTASMAL_SPHERE, PHANTASMAL_EYE = 462, 454, 452
 
 DEFAULTS = {
     "mode": "fight",
-    "max_seconds": {"fight": 300.0, "gym": 20.0, "free": 120.0},
+    "max_seconds": {"fight": 300.0, "free": 120.0},
     "countdown_s": 0,            # seconds of warning before the boss spawns (human demos)
     "summon_slots": [],          # hotbar slots holding summon staffs, e.g. [0, 1]
     "heal_at_hp": 300,           # heal assist: quick-heal at or below this HP (when not potion-sick)
@@ -78,18 +74,6 @@ DEFAULTS = {
     "boss_type": MOON_LORD_CORE,
     "boss_appear_timeout_s": 10.0,
     "respawn_timeout_s": 90.0,
-    # Dodge gym (mode=gym)
-    "gym_period_s": 1.0,         # one volley per second
-    "gym_volley": 3,             # projectiles per volley
-    "gym_distance": 600.0,       # px from the player where a volley starts
-    "gym_speed": 10.0,           # px/tick
-    "gym_spread": 0.15,          # radians of aim error per projectile
-    "gym_damage": 50,
-    # Bolts only by default: they fly straight. Spheres and eyes normally
-    # take orders from the Moon Lord's AI (aim, release, homing), so spawned
-    # on their own in the real game they may hover or vanish -- try them
-    # live before relying on them (--gym-types 462,454,452).
-    "gym_types": [PHANTASMAL_BOLT],
 }
 
 
@@ -101,7 +85,7 @@ def connect(fake=False, fake_config=None):
     if fake:
         from fake_bridge import FakeMoonLordBridge
         return FakeMoonLordBridge(fake_config)
-    from dumb_bot import Bridge
+    from client import Bridge
     return Bridge()
 
 
@@ -299,20 +283,6 @@ def spawn_boss(bridge, clock, boss_type, timeout_s):
     raise HarnessError(f"boss type {boss_type} did not appear within {timeout_s}s")
 
 
-def gym_volley(bridge, rng, cfg):
-    """Fire one volley of projectiles at the player from a random direction.
-    Uses dx/dy (offsets from the player's centre), so it needs no state."""
-    ang = rng.uniform(0, 2 * math.pi)
-    d = cfg["gym_distance"]
-    sx, sy = d * math.cos(ang), d * math.sin(ang)
-    for _ in range(cfg["gym_volley"]):
-        aim = math.atan2(-sy, -sx) + rng.uniform(-cfg["gym_spread"], cfg["gym_spread"])
-        t = rng.choice(cfg["gym_types"])
-        _ok(bridge.request({"cmd": "spawn_projectile", "type": t, "dx": sx, "dy": sy,
-                            "vx": cfg["gym_speed"] * math.cos(aim), "vy": cfg["gym_speed"] * math.sin(aim),
-                            "damage": cfg["gym_damage"]}), "spawn_projectile")
-
-
 def _trim_state(st):
     """Logged state without the tile grid (useless in a sky arena, large)."""
     return {k: v for k, v in st.items() if k != "tiles"}
@@ -480,7 +450,6 @@ def run_episode(bridge, policy, cfg, episode_seed, log_file=None):
     clock = Clock(simulated)
     mode = cfg["mode"]
     max_s = cfg["max_seconds"][mode] if isinstance(cfg["max_seconds"], dict) else cfg["max_seconds"]
-    rng = random.Random(episode_seed)
 
     def log(rec):
         if log_file is not None:
@@ -539,7 +508,6 @@ def run_episode(bridge, policy, cfg, episode_seed, log_file=None):
     tick, outcome = 0, None
     wall_start = time.monotonic()
     start_ticks = None
-    next_volley = 0.0
     boss_seen = mode != "fight"
     while outcome is None:
         clock.start_tick()
@@ -565,10 +533,6 @@ def run_episode(bridge, policy, cfg, episode_seed, log_file=None):
         if outcome is not None:
             log({"phase": "end", "tick": tick, "outcome": outcome, "state": _trim_state(st)})
             break
-
-        if mode == "gym" and elapsed >= next_volley:
-            gym_volley(bridge, rng, cfg)
-            next_volley += cfg["gym_period_s"]
 
         if nurse.get("enabled"):
             done = nurse_step(bridge, st, cfg, nstate, log)
@@ -739,9 +703,9 @@ def config_from_loadout(loadout, mode="fight", whip_strategy=None, buffs=True, h
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--policy", default="idle", choices=["idle", "random", "scripted", "fly", "human", "sectors", "senses3"])
-    ap.add_argument("--mode", default="fight", choices=["fight", "gym", "free"],
-                    help="fight = Moon Lord; gym = projectile volleys; free = nothing spawns (movement demos)")
+    ap.add_argument("--policy", default="idle", choices=["idle", "random", "scripted", "fly", "human", "senses3"])
+    ap.add_argument("--mode", default="fight", choices=["fight", "free"],
+                    help="fight = Moon Lord; free = nothing spawns (movement demos)")
     ap.add_argument("--episodes", type=int, default=1)
     ap.add_argument("--seed", type=int, default=0, help="first episode seed; episode i uses seed+i")
     ap.add_argument("--max-seconds", type=float, default=None)
@@ -769,32 +733,35 @@ def main(argv=None):
     ap.add_argument("--clear-tombstones", action="store_true",
                     help="remove every gravestone in the world, then exit (resets also clear them near the arena)")
     ap.add_argument("--loadout", default=str(LOADOUT), help="loadout file (default training/moonlord/loadout.json)")
-    ap.add_argument("--no-fly-flee", action="store_true",
-                    help="fly policy without the flee-by-flying rule (ablation: brain/decoder movement only)")
-    ap.add_argument("--fly-vertical", choices=["brain", "rule", "off"], default=None,
-                    help="fly climb/dive source: brain (LC4->Giant Fiber climb, LPLC4->DNp07 dive; default), "
-                         "rule (hand sawtooth), off")
-    ap.add_argument("--fly-commit", type=int, default=0, help="fly: keep a flee direction for N decisions (0 = off)")
-    ap.add_argument("--fly-dive-hz", type=float, default=40.0, help="fly: landing (DNp07) rate needed to dive")
-    ap.add_argument("--fly-waypoint", action="store_true",
-                    help="fly: approach channel pulled toward a safe spot 600 px from the core")
     ap.add_argument("--no-heal", action="store_true", help="don't drink healing potions (scripted assist)")
     ap.add_argument("--whip-strategy", choices=["nearest", "balanced"], default=None,
                     help="which Moon Lord part the whip assist tags (minions follow the tag)")
     ap.add_argument("--no-whip-assist", action="store_true", help="don't swing the whip (scripted assist)")
     ap.add_argument("--no-loadout-buffs", action="store_true", help="don't re-apply the loadout's buffs each episode")
-    ap.add_argument("--params-file", default=None, help="tuned params JSON for --policy fly (encoder/decoder/policy blocks, from train_fly_cma.py or imitate.py)")
-    ap.add_argument("--gym-types", default=None, help="projectile type ids for gym volleys, e.g. 462,454,452")
+    ap.add_argument("--params-file", default=None,
+                    help="--policy fly: readout params (default params/scene3_master_ray.json); "
+                         "--policy senses3: teacher weights (default params/senses3_teacher.json)")
+    ap.add_argument("--engine", default="fast", choices=["fast", "np"],
+                    help="fly brain engine: fast (numba, live) or np (pure numpy, slow; offline checks)")
     ap.add_argument("--fake", action="store_true", help="use the offline fake bridge instead of the game")
     ap.add_argument("--fly-null", default="none", choices=["none", "shuffled", "ablated"],
-                    help="scene fly: run it on a null brain (control)")
+                    help="fly: run it on a null brain (control)")
+    ap.add_argument("--fake-master", action="store_true", help="with --fake: the Master-mode offline fight")
+    ap.add_argument("--countdown", type=float, default=None,
+                    help="seconds to wait (counting down) before each boss spawns, e.g. to start a recording")
+    ap.add_argument("--brain-viz", action="store_true",
+                    help="fly: serve the live brain viewer (viz/brain_viewer.html) at http://localhost:<--viz-port>")
+    ap.add_argument("--viz-port", type=int, default=8765)
+    ap.add_argument("--record-brain", action="store_true",
+                    help="fly: save every brain slice to logs/moonlord/<run>_brain.jsonl.gz (replay with viz/replay.py)")
     ap.add_argument("--dodger-ring", default=None, help="scripted: min,max px from the core to circle at (default 450,900)")
     ap.add_argument("--dodger-keep-away", type=float, default=None, help="scripted: px to keep from every boss part (default 250)")
     ap.add_argument("--dodger-dither", type=float, default=None, help="scripted: cost of changing move (default 0.2)")
     ap.add_argument("--no-log", action="store_true", help="don't write per-tick logs (summaries still written)")
     args = ap.parse_args(argv)
 
-    bridge = connect(fake=args.fake, fake_config={"seed": args.seed})
+    bridge = connect(fake=args.fake, fake_config={"seed": args.seed,
+                                                  **({"difficulty": "master"} if args.fake_master else {})})
     loadout = json.loads(Path(args.loadout).read_text())
     if args.builder_kit:
         # Building tools on top of the fight loadout (hotbar slots 3-4 + extra inventory).
@@ -914,31 +881,12 @@ def main(argv=None):
         cfg["summon_slots"] = [int(s) for s in args.summon_slots.split(",") if s.strip()]
     if args.policy == "human":
         cfg["countdown_s"] = 3  # time to put your hands on the keyboard
-    if args.gym_types:
-        cfg["gym_types"] = [int(s) for s in args.gym_types.split(",") if s.strip()]
+    if args.countdown is not None:
+        cfg["countdown_s"] = args.countdown
     if args.keep_focus:
         _ok(bridge.request({"cmd": "set_keep_focus", "enabled": True}), "set_keep_focus")
 
     kw = {}
-    if args.policy == "fly" and args.params_file:
-        data = json.loads(Path(args.params_file).read_text())
-        kw = {"enc_params": data.get("encoder"), "dec_params": data.get("decoder")}
-    if args.policy == "fly" and args.no_fly_flee:
-        kw["fly_flee"] = False
-    if args.policy == "fly" and args.fly_vertical:
-        kw["vertical"] = args.fly_vertical
-    if args.policy == "fly":
-        kw.update(commit_ticks=args.fly_commit, dive_on_hz=args.fly_dive_hz, waypoint=args.fly_waypoint)
-        import fly_params
-        kw["arena"] = fly_params.arena_px(loadout)
-    if args.policy == "fly" and args.params_file:
-        # Tuned FlyPolicy knobs (train_fly_cma.py / imitate.py) win over the CLI defaults.
-        kw.update(data.get("policy") or {})
-    if args.policy == "sectors":
-        # Information-ceiling probe (not the fly): weights + FlyPolicy attention knobs from a params file.
-        data = json.loads(Path(args.params_file or HERE / "params" / "sectors_linear.json").read_text())
-        import fly_params
-        kw = {**fly_params.policy_kwargs(data), "weights": data["weights"]}
     if args.policy == "scripted":
         # Keep the scripted dodger inside the built arena (90% of its half-width).
         a = loadout.get("arena", {})
@@ -951,39 +899,23 @@ def main(argv=None):
         if args.dodger_dither is not None:
             kw["dither_cost"] = args.dodger_dither
     if args.policy == "senses3":
-        # v3-senses teacher (scene3.V3Policy): reads the fly's v3 senses directly, no brain. Not the fly.
+        # The teacher (scene3.V3Policy): reads the fly's senses directly, no brain. Not the fly.
         import scene3
         import fly_params
         data = json.loads(Path(args.params_file or HERE / "params" / "senses3_teacher.json").read_text())
         policy = scene3.V3Policy(data["weights"], fly_params.arena_px(loadout))
-    elif (args.policy == "fly" and args.params_file
-          and "override" in (json.loads(Path(args.params_file).read_text()).get("readout") or {})):
-        # Scene fly v3 (scene_fly3.py)
+    elif args.policy == "fly":
+        # The fly (scene_fly3.py): senses -> connectome brain -> descending-neuron readout.
         from scene_fly3 import SceneFly3Policy
-        brain_kw = {}
-        if args.fly_null != "none":
-            from brain_backend import make_brain
-            b, _ = make_brain("fast", args.fly_null, seed=0)
-            brain_kw = {"brain": b}
-        policy = SceneFly3Policy(json.loads(Path(args.params_file).read_text())["readout"], **brain_kw)
-    elif args.policy == "fly" and args.params_file and "readout" in json.loads(Path(args.params_file).read_text()):
-        # Scene fly (v2 senses + learned readout, scene_fly.py): same brain, richer input types.
-        from scene_fly import SceneFlyPolicy
-        import fly_params
-        data = json.loads(Path(args.params_file).read_text())
-        brain_kw = {}
-        if args.fly_null != "none":
-            # Null-brain control live (same senses and readout, scrambled/ablated brain).
-            from brain_backend import make_brain
-            b, rf = make_brain("fast", args.fly_null, seed=0)
-            brain_kw = {"brain": b, "readout_fn": rf}
-        policy = SceneFlyPolicy(readout=data["readout"], **brain_kw, **fly_params.policy_kwargs(data))
+        from brain_backend import make_brain
+        params_file = Path(args.params_file or DEFAULT_FLY_PARAMS)
+        if args.engine == "fast" and not args.fake:
+            print("Building the brain (once, before the first fight)...", flush=True)
+        brain, _ = make_brain(args.engine, args.fly_null, seed=0)
+        policy = SceneFly3Policy(json.loads(params_file.read_text())["readout"], brain=brain)
     else:
         policy = make_policy(args.policy, seed=args.seed, **kw)
 
-    if hasattr(policy, "_ensure_brain") and not args.fake:
-        print("Building the brain (once, before the first fight)...", flush=True)
-        policy._ensure_brain()
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     rows = []
@@ -1004,16 +936,9 @@ def main(argv=None):
                                               or args.dodger_dither is not None):
                 row["variant"] = (f"ring{args.dodger_ring or '450,900'}_keep{args.dodger_keep_away or 250:g}"
                                   f"_dither{args.dodger_dither if args.dodger_dither is not None else 0.2:g}")
-            if args.policy == "fly" and args.no_fly_flee:
-                row["variant"] = "no_fly_flee"
-            elif args.policy == "fly" and args.params_file:
-                row["variant"] = ("tuned_" + Path(args.params_file).stem
+            if args.policy == "fly":
+                row["variant"] = ("tuned_" + params_file.stem
                                   + ("" if args.fly_null == "none" else f"_brain_{args.fly_null}"))
-            elif args.policy == "fly":
-                row["variant"] = (f"vertical_{args.fly_vertical or 'brain'}"
-                                  + (f"_commit{args.fly_commit}" if args.fly_commit else "")
-                                  + (f"_dive{args.fly_dive_hz:g}" if args.fly_dive_hz != 40.0 else "")
-                                  + ("_waypoint" if args.fly_waypoint else ""))
             rows.append(row)
             # Fake-bridge runs go to their own file so they never mix with real fights.
             with open(LOG_DIR / ("results_fake.jsonl" if args.fake else "results.jsonl"), "a") as f:
