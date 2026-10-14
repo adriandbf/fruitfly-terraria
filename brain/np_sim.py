@@ -15,7 +15,6 @@ Not bit-identical to fast_sim (different RNG draw order), so compare
 statistically -- see validate_np_sim.py.
 """
 import math
-from pathlib import Path
 
 import numpy as np
 

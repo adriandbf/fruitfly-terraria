@@ -2,8 +2,8 @@
 
 Why this exists: Brian's runtime (Cython) mode has a large FIXED per-call
 overhead per net.run() -- around 320ms regardless of dt (see
-bench_runtime_dt.py) -- which rules it out for a 100ms-slice, 10Hz control
-loop. Brian's standalone C++ mode is fast (bench_dt_sweep.py: 15-150ms
+an early benchmark) -- which rules it out for a 100ms-slice, 10Hz control
+loop. Brian's standalone C++ mode is fast (early benchmark: 15-150ms
 depending on dt) but compiles one fixed simulation and can't take new
 input between slices, so it can't drive a live loop either.
 
@@ -41,7 +41,7 @@ treats it as an unused local. Omitted here.
 NOT modeled (unused by default_params, add if a later phase needs them):
 a second Poisson input class (r_poi2) and neuron silencing.
 
-See validate_fast_sim.py for the comparison against Brian's own output.
+See validate_fast_sim_v783.py for the comparison against Brian's own output.
 """
 import math
 import numpy as np
@@ -57,7 +57,7 @@ class FastBrain:
         params: the same default_params dict from model.py (Brian Quantity
             values; converted to plain floats in mV/ms here).
         dt_ms: fixed timestep in ms. Coarser = faster but less precise
-            refractory/delay timing resolution (see bench_dt_sweep.py for
+            refractory/delay timing resolution (see the early dt benchmarks for
             the speed/dt tradeoff measured on the standalone build).
         exc_indices: neuron INDICES (0-based, into df_comp's row order,
             NOT FlyWire IDs) that receive the Poisson "sugar" drive for
@@ -231,7 +231,7 @@ def _run_loop(n_steps, step0, n, v, g, refractory_until_step,
 
         # 1. deliver synaptic deltas scheduled for this step, then clear the slot.
         # Dropped (not deferred) for refractory targets -- confirmed against Brian
-        # (validate_refractory.py) that it suppresses ANY modification of v/g
+        # (an early refractory check) that it suppresses ANY modification of v/g
         # during refractory, not just their own continuous integration; an
         # incoming delta during refractory just vanishes, it doesn't queue.
         for i in range(n):
@@ -241,7 +241,7 @@ def _run_loop(n_steps, step0, n, v, g, refractory_until_step,
 
         # 2. Poisson "sugar" drive: direct kick to v, undelayed. Same
         # refractory suppression as above -- this was the actual bug found
-        # by validate_fast_sim.py's 29% excess spike count: applying this
+        # by the Brian comparison's 29% excess spike count: applying this
         # unconditionally let a wrongly-inflated v persist into the next
         # non-refractory step, one step after refractory technically ends.
         for j in range(exc_indices.shape[0]):
