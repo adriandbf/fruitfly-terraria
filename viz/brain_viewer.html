@@ -60,9 +60,9 @@
   #pad::before { left: 50%; top: 0; bottom: 0; width: 1px; }
   #pad::after { top: 50%; left: 0; right: 0; height: 1px; }
   #dot { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; background: var(--dn); border-radius: 50%; left: 50%; top: 50%; box-shadow: 0 0 10px var(--dn); transition: left 90ms linear, top 90ms linear; }
-  #phase { top: 50%; left: 50%; transform: translate(-50%, -50%); font-family: var(--cond); font-weight: 600; font-size: 15px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); opacity: 0; transition: opacity 300ms; text-align: center; }
+  #phase { top: 26px; left: 50%; transform: translateX(-50%); font-family: var(--cond); font-weight: 600; font-size: 15px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); opacity: 0; transition: opacity 300ms; text-align: center; }
   #phase.show { opacity: 1; }
-  #phase.end { font-size: 44px; color: var(--ink); text-shadow: 0 0 30px rgba(255, 255, 255, 0.25); }
+  #phase.end { top: 50%; transform: translate(-50%, -50%); font-size: 44px; color: var(--ink); text-shadow: 0 0 30px rgba(255, 255, 255, 0.25); }
   #phase small { display: block; font-family: var(--mono); font-size: 13px; letter-spacing: 0.04em; text-transform: none; color: var(--dim); margin-top: 10px; }
   #help { bottom: 6px; left: 50%; transform: translateX(-50%); color: #3a4656; font-size: 10.5px; }
   #conn { top: 76px; left: 26px; color: var(--dim); font-size: 11px; }
@@ -167,7 +167,7 @@
       float core = smoothstep(1.0, 0.0, r);
       vec3 rest = vec3(0.30, 0.40, 0.55);
       float a = 0.055 + vHeat * core * core * 0.95;
-      vec3 c = mix(rest, vColor, min(1.0, vHeat * 1.5)) + vec3(1.0) * max(0.0, vHeat - 0.8) * core;
+      vec3 c = mix(rest, vColor, min(1.0, vHeat * 1.5)) + vec3(1.0) * 0.45 * max(0.0, vHeat - 0.8) * core;
       o = vec4(c, a);
     }`;
   const VS_EDGES = `#version 300 es
@@ -274,6 +274,7 @@
     if (f.phase === "end") {
       const word = { win: "Moon Lord defeated", loss: "The fly fell", timeout: "Time up", despawn: "Moon Lord left" }[f.outcome] || f.outcome;
       phaseEl.className = "hud show end";
+      document.querySelectorAll("#keys div").forEach(el => { el.className = ""; });
       phaseEl.innerHTML = `${word}<small>${f.t ? f.t.toFixed(0) + " s" : ""}${f.hits != null ? " &middot; " + f.hits + " hits taken" : ""}</small>`;
       return;
     }
