@@ -1,5 +1,5 @@
 """Pure-numpy port of fast_sim.FastBrain, for running the connectome where
-numba/pyarrow aren't installed (the cloud workspace Claude analyses in).
+numba/pyarrow aren't installed (e.g. a minimal analysis environment).
 Same equations, same order of operations per 1 ms step as fast_sim's
 _run_loop (deliver delayed synaptic input -> Poisson kicks -> exact
 analytic membrane/conductance step -> threshold, reset, schedule

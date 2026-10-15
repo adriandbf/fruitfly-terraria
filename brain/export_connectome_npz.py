@@ -1,6 +1,6 @@
 """One-time export of the v783 connectome to plain numpy (.npz), so the
-model can also be loaded where pyarrow/numba aren't installed (e.g. the
-cloud workspace Claude runs analysis in). Not used by the live loop.
+model can also be loaded where pyarrow/numba aren't installed (e.g. a
+minimal analysis environment). Not used by the live loop.
 
 Writes brain/data/connectome_783.npz with:
   ids    -- FlyWire root ids, index-aligned with Completeness_783.csv
