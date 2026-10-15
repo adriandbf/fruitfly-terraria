@@ -45,7 +45,6 @@ See validate_fast_sim_v783.py for the comparison against Brian's own output.
 """
 import math
 import numpy as np
-import numba
 from numba import njit
 
 
