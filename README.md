@@ -16,7 +16,7 @@ A simulated fruit-fly brain, wired exactly like the real insect's connectome, fi
 
 <a href="https://youtu.be/wFeaiE6nqaQ"><img src="docs/demo_thumbnail.jpg" alt="Watch the demo on YouTube: the fly fights the Moon Lord in Terraria (left) while its brain fires live in the viewer (right)" width="100%"></a>
 
-*A Master-mode Moon Lord fight: the game on the left, the fly's brain firing live on the right. [Watch on YouTube](https://youtu.be/wFeaiE6nqaQ).*
+*The fly beats the Moon Lord on Master mode: the game on the left, its brain firing live on the right. [Watch on YouTube](https://youtu.be/wFeaiE6nqaQ).*
 
 ## Overview
 
