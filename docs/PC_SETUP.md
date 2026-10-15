@@ -26,7 +26,6 @@ USB stick, a cloud drive or similar. Also push the repo so the PC can clone it.
 - **Steam, Terraria and tModLoader**, signed in to the Steam account that owns them. Launch tModLoader once so it creates its folders, then quit.
 - **Git for Windows**: https://git-scm.com
 - **Python 3.12** from https://python.org. Tick *Add python.exe to PATH* in the installer.
-- Access to the private repo: GitHub Desktop, or `git` with a personal access token.
 
 ## 3. On the PC: clone and run the setup script
 
@@ -53,7 +52,7 @@ It's safe to run again; it skips what's already done. Add `-Force` to overwrite 
 
 Start tModLoader. Go to **Workshop > Develop Mods**, find **FruitFlyBridge**, then **Build + Reload**. Check it's enabled under **Workshop > Manage Mods**.
 
-The mod was written against tModLoader **v2026.07.3.0**. If Steam has updated tModLoader since then and the build fails, send me the error.
+The mod was written against tModLoader **v2026.07.3.0**. If Steam has updated tModLoader since then and the build fails, the build log names the API that changed; the mod's code may need updating to match.
 
 ## 5. Game settings for the recording
 
