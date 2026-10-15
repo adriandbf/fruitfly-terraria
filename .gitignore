@@ -1,19 +1,27 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+
+# Run logs, results and fight recordings
 logs/
+brain/results/
+
+# Brain model and connectome data (downloaded separately; see README)
 brain/Drosophila_brain_model/
 brain/data/
 *.parquet
 *.feather
-brain/standalone_build_*/
+
+# tModLoader build output
 bridge/mod/*/bin/
 bridge/mod/*/obj/
 bridge/mod/*/Localization/
 *.tmod
 
-# Claude working notes (kept locally, not in the repo)
-CLAUDE.md
-brain/results/
+# PC transfer bundle (scripts/pack_for_pc.sh)
 fruitfly_pc_bundle.zip
+
+# OS files
 .DS_Store
