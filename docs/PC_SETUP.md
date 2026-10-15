@@ -35,7 +35,6 @@ In PowerShell:
 cd $HOME\Documents
 git clone https://github.com/adriandbf/fruitfly-terraria.git
 cd fruitfly-terraria
-git checkout master-mode        # or main, once master-mode is merged
 powershell -ExecutionPolicy Bypass -File setup_pc.ps1 -Bundle C:\path\to\fruitfly_pc_bundle.zip
 ```
 
